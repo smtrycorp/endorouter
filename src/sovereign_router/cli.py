@@ -74,12 +74,12 @@ def cmd_explain(a) -> int:
     return 0 if d.selected else 3
 
 
-def _auto():
+def _auto(trust: tuple[str, ...] = ()):
     from .config import parse_config
     from .discover import auto_config
 
     try:
-        raw, notes = auto_config()
+        raw, notes = auto_config(trust=trust)
     except RuntimeError as e:
         sys.exit(str(e))
     return raw, notes, parse_config(raw)
@@ -90,7 +90,7 @@ def cmd_init(a) -> int:
 
     if Path(a.config).exists() and not a.force:
         sys.exit(f"{a.config} already exists (use --force to replace it)")
-    raw, notes, _ = _auto()
+    raw, notes, _ = _auto(tuple(a.trust))
     for n in notes:
         print(n)
     Path(a.config).write_text("# written by `sovereign-router init`: everything below was found, not asked for\n"
@@ -139,6 +139,8 @@ def main(argv: list[str] | None = None) -> int:
         p.add_argument("-c", "--config", default=DEFAULT_CONFIG)
         if name == "init":
             p.add_argument("--force", action="store_true", help="replace an existing config")
+            p.add_argument("--trust", action="append", default=[], metavar="NAME",
+                           help="declare a discovered server local although it could not be verified (e.g. jan)")
         if name == "explain":
             p.add_argument("-f", "--file", help="a prompt or a JSON request body (default: stdin, so prompts stay out of shell history)")
             p.add_argument("--source", action="append", default=[], help="a source identifier (repeatable)")

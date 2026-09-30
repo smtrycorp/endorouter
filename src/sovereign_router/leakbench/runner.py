@@ -70,6 +70,9 @@ def load_cases(path: str | None) -> list[dict]:
 REFUSAL_STATUSES = {400, 403, 451}
 
 
+CASE_METADATA = {"id", "category", "truth", "sources", "label", "model", "messages"}
+
+
 def _marked(case: dict, model: str | None = None) -> tuple[dict, str]:
     # random and fixed-length, so no marker can contain another (lbk-p inside lbk-public was a false leak); lowercase
     # letters only, so the marker itself never looks like a secret to any detector (a random hex marker did)
@@ -79,7 +82,9 @@ def _marked(case: dict, model: str | None = None) -> tuple[dict, str]:
         if m.get("role") == "user" and isinstance(m.get("content"), str):
             m["content"] = f"{m['content']}\n[{marker}]"
             break
-    return {"model": model or case.get("model", "auto"), "messages": msgs, **({"tools": case["tools"]} if case.get("tools") else {})}, marker
+    # every request field a case carries is kept (stop, response_format, tools, ...); only benchmark metadata is not sent
+    fields = {k: json.loads(json.dumps(v)) for k, v in case.items() if k not in CASE_METADATA}
+    return {**fields, "model": model or case.get("model", "auto"), "messages": msgs}, marker
 
 
 CALIBRATION = {"id": "calibration", "category": "calibration", "truth": "public",

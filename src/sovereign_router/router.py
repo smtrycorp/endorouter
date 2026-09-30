@@ -25,6 +25,7 @@ from .config import Config, Target
 from .detectors import Finding, scan_request
 from .labels import Label
 from .policy import Decision, decide, permitted_targets
+from .validate import InvalidRequest, validate
 
 RETRYABLE = {429, 500, 502, 503, 504}
 
@@ -99,6 +100,9 @@ class Router:
         capability: str | None = None,
     ) -> Routed:
         request_id = uuid.uuid4().hex[:16]
+        problem = validate(body)
+        if problem:  # the same refusal a library caller gets as an HTTP caller
+            raise InvalidRequest(problem)
         # inspect and send one private snapshot: a caller that mutates its own objects mid-flight cannot change
         # what is sent after it was inspected
         body = copy.deepcopy(body)

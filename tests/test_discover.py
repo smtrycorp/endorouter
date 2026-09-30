@@ -15,7 +15,7 @@ from sovereign_router.server import create_app
 
 def test_auto_config_finds_local_and_env_keys(monkeypatch, tmp_path):
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path))
-    monkeypatch.setattr(discover, "find_local", lambda timeout=1.0: [("ollama", "http://127.0.0.1:11434/v1", "qwen3:8b")])
+    monkeypatch.setattr(discover, "find_local", lambda timeout=1.0: ([("ollama", "http://127.0.0.1:11434/v1", "qwen3:8b")], []))
     for _, env, _ in discover.CLOUD_PROVIDERS:
         monkeypatch.delenv(env, raising=False)
     monkeypatch.setenv("OPENAI_API_KEY", "x")
@@ -26,8 +26,8 @@ def test_auto_config_finds_local_and_env_keys(monkeypatch, tmp_path):
 
 
 def test_no_local_server_is_a_clear_error(monkeypatch):
-    monkeypatch.setattr(discover, "find_local", lambda timeout=1.0: [])
-    with pytest.raises(RuntimeError, match="no local model server"):
+    monkeypatch.setattr(discover, "find_local", lambda timeout=1.0: ([], []))
+    with pytest.raises(RuntimeError, match="no verified local model server"):
         discover.auto_config()
 
 

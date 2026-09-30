@@ -77,12 +77,13 @@ def canonical_source(source: str) -> str | None:
             return None
         if not host or u.username is not None or u.password is not None or "@" in u.netloc:
             return None
+        # a ';' (matrix parameters) or an encoded '/' or '\\' means servers disagree about which resource the path
+        # names (/private/..;x/public is literal to some, /public to others): such a source is not matchable
+        if ";" in u.path or re.search(r"%(?:2f|5c|3b)", u.path, re.IGNORECASE):
+            return None
         path = unquote(u.path)
         if "\x00" in path or "\\" in path:
             return None
-        # drop matrix parameters (/public/..;/private is /public/../private to many servers), then resolve dot
-        # segments; a path that climbs above the root is not matchable
-        path = re.sub(r";[^/]*", "", path)
         if path:
             resolved = posixpath.normpath("/" + path.lstrip("/"))
             if ".." in resolved.split("/"):
@@ -96,13 +97,18 @@ def canonical_source(source: str) -> str | None:
     return norm
 
 
+def _glob(s: str, pattern: str) -> bool:
+    """fnmatch, except that a leading '**/' also matches zero directories, so '**/.netrc' covers '.netrc' itself."""
+    return fnmatchcase(s, pattern) or (pattern.startswith("**/") and fnmatchcase(s, pattern[3:]))
+
+
 def source_label(source: str, cfg: Config) -> tuple[Label, str]:
     s = canonical_source(source)
     if s is None:
         return Label.UNKNOWN, "source_unmatchable"
-    if any(fnmatchcase(s, g) for g in cfg.provenance.private_sources):
+    if any(_glob(s, g) for g in cfg.provenance.private_sources):
         return Label.PRIVATE, "source_private"
-    if any(fnmatchcase(s, g) for g in cfg.provenance.public_sources):
+    if any(_glob(s, g) for g in cfg.provenance.public_sources):
         return Label.PUBLIC, "source_public"
     return Label.UNKNOWN, "source_unknown"
 
@@ -173,7 +179,7 @@ def decide(
                             "the requested model is not a configured target (use 'auto' or a target name)")
         if t.name not in permitted:
             return Decision(label, permitted, None, tuple(reasons + ["requested_target_not_permitted"]), cleared,
-                            f"target '{model}' is not permitted for a {label.name.lower()} request")
+                            f"target '{t.name}' is not permitted for a {label.name.lower()} request")
         return Decision(label, (t.name,), t.name, tuple(reasons + ["requested_target"]), cleared)
     if not permitted:
         return Decision(label, permitted, None, tuple(reasons), cleared, "no permitted target satisfies this request")

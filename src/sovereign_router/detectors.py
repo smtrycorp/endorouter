@@ -203,7 +203,9 @@ def _shape_findings(t: str, where: str) -> Iterator[Finding]:
 
 # a run of single characters separated by single spaces or hyphens ("A K I A I O S F ..."): a secret typed out letter
 # by letter; bounded and linear
-_SPACED = re.compile(r"(?<![A-Za-z0-9])(?:[A-Za-z0-9][ \-]){7,4096}[A-Za-z0-9](?![A-Za-z0-9])")
+_SPACED = re.compile(r"(?<![A-Za-z0-9_\-])(?:[A-Za-z0-9_\-] ){7,4096}[A-Za-z0-9_\-](?![A-Za-z0-9_\-])")
+# a JSON string literal holding escapes, anywhere in prose ("Tool returned: {\"k\": \"\\u0041KIA...\"}"), decoded
+_JSON_STR = re.compile(r'"(?:[^"\\\n]|\\.){0,8192}"')
 
 
 def scan_text(text: str, where: str) -> Iterator[Finding]:
@@ -216,8 +218,20 @@ def scan_text(text: str, where: str) -> Iterator[Finding]:
         for f in _shape_findings(t, where):
             seen.add(f.rule)
             yield f
+    if "\\" in t:
+        for m in _JSON_STR.finditer(t):
+            if "\\" not in m.group(0):
+                continue
+            try:
+                decoded = json.loads(m.group(0))
+            except ValueError:
+                continue
+            for f in _scan_normalised(normalise(decoded), f"{where}<json-string>"):
+                if f.rule not in seen:
+                    seen.add(f.rule)
+                    yield f
     for m in _SPACED.finditer(t):
-        for f in _scan_normalised(re.sub(r"[ \-]", "", m.group(0)), f"{where}<spaced>"):
+        for f in _scan_normalised(m.group(0).replace(" ", ""), f"{where}<spaced>"):
             if f.rule not in seen:
                 seen.add(f.rule)
                 yield f
@@ -283,17 +297,40 @@ def texts_in_request(body: dict) -> Iterator[tuple[str, str]]:
 
 
 def _texts(body: dict) -> Iterator[tuple[str, str]]:
-    """Every string the upstream model would receive: every field of the body except the model name, which the router
-    replaces. That covers messages of every role, content parts, tool calls and results, tools, stop sequences,
+    """Every string the upstream model would receive: every field of the body, the model name included. That covers messages of every role, content parts, tool calls and results, tools, stop sequences,
     response_format schemas and the user field, including dict keys and JSON carried inside strings."""
     for k, v in body.items():
-        if k == "model":
+        yield from _walk(v, k)  # includes "model": a pass-through target forwards the client's model name upstream
+
+
+_JOIN_RULES = {"private_key", "aws_access_key", "github_token", "openai_key", "anthropic_key", "stripe_key",
+               "slack_token", "google_api_key", "jwt", "payment_card"}
+
+
+def _joined_texts(body: dict) -> Iterator[tuple[str, str]]:
+    """Message texts joined with nothing between them: all messages, and the user's messages alone, so a key split
+    across messages or content parts ("AKIA" then "IOSFODNN7EXAMPLE") is whole again. Only precise format rules are
+    run on the joins; they cost one more linear pass."""
+    parts, user = [], []
+    for m in body.get("messages") or []:
+        if not isinstance(m, dict):
             continue
-        yield from _walk(v, k)
+        c = m.get("content")
+        texts = [c] if isinstance(c, str) else [p.get("text") for p in c if isinstance(p, dict) and isinstance(p.get("text"), str)] if isinstance(c, list) else []
+        parts.extend(texts)
+        if m.get("role") == "user":
+            user.extend(texts)
+    if len(parts) > 1:
+        yield "messages<joined>", "".join(t.strip() for t in parts)
+    if len(user) > 1:
+        yield "messages<user-joined>", "".join(t.strip() for t in user)
 
 
 def scan_request(body: dict, extra: Iterable[tuple[str, str]] = ()) -> list[Finding]:
     found: list[Finding] = []
+    for where, text in _joined_texts(body):
+        t = normalise(text)
+        found.extend(f for f in _scan_normalised(t, where) if f.rule in _JOIN_RULES)
     for where, text in list(_texts(body)) + list(extra):
         if isinstance(text, _Undecodable):
             found.append(Finding("undecodable_nested_json", where))

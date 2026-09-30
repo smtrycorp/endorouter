@@ -22,7 +22,7 @@ sovereign-router serve
 
 Then point your client at `http://127.0.0.1:8787/v1`. There are no questions and no config file. On start the router does three things:
 
-- **It finds your local model.** It checks the ports Ollama, LM Studio, llama.cpp, vLLM and Jan listen on by default, and uses the first model it finds.
+- **It finds your local model and checks that it really is local.** It looks at the ports Ollama, LM Studio, llama.cpp, vLLM and Jan use by default. A server is trusted only if the program behind the port is known to run models on this machine. It also skips any Ollama model that is hosted remotely. Anything it cannot verify, such as a gateway or proxy, is reported and not used. You can trust it yourself with `sovereign-router init --trust <name>`.
 - **It adds cloud providers only if their key is already set.** Examples are `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, `MISTRAL_API_KEY`, `GROQ_API_KEY` and `OPENROUTER_API_KEY`. A client asks for a cloud model as `openai/gpt-5`, and gets it only for work labelled public.
 - **It protects standard secret files.** Examples are `.env`, `*.pem`, SSH keys, `.aws/credentials` and `.netrc`. It runs in strict mode, so anything unlabelled stays local.
 
@@ -82,7 +82,7 @@ These are enforced in code and pinned by tests.
 
 A router can only enforce what it is told, so this section matters more than the rest.
 
-- **Localhost is not proof of local inference.** Some local servers can proxy requests to a hosted model. If a target you declare `local` forwards to a cloud, this router cannot know. `sovereign-router doctor` reminds you of this for every local target.
+- **Localhost is not proof of local inference.** Some local servers can proxy requests to a hosted model. Discovery trusts only known local-inference programs, and it checks Ollama models for remote hosting. A target you declare `local` yourself, in a config file or with `--trust`, is taken at your word. `sovereign-router doctor` reminds you of this for every local target.
 - **Provenance is only as good as the client that sends it.** Configure `trusted_clients` narrowly. The router ignores `X-Forwarded-For`, so no caller can borrow a trusted address. Behind a reverse proxy, the proxy is the peer, so list it in `trusted_clients` only if every caller behind it is trusted.
 - **Detectors catch formats, not meaning.** That is why the default is local. In balanced mode, unlabelled work can reach the cloud if the local classifier calls it public, and that is a judgement call you opt into.
 
