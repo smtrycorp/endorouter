@@ -160,3 +160,31 @@ def test_phone_rule_ignores_digit_runs_inside_tokens():
     rules = {f.rule for f in scan_text("xoxb-1234567890123-1234567890123-AbCdEfGhIjKlMnOpQrStUvWx", "x")}
     assert "slack_token" in rules and "phone_number" not in rules
     assert any(f.rule == "phone_number" for f in scan_text("call me on +1 415 555 0132 tomorrow", "x"))
+
+
+def test_every_forwarded_field_is_scanned_including_keys_and_json_in_strings():
+    body = {
+        "model": "auto",
+        "messages": [{"role": "user", "content": "hi"}],
+        "stop": ["AKIAIOSFODNN7EXAMPLE"],
+        "response_format": {"type": "json_schema", "json_schema": {"name": "x", "schema": {"properties": {
+            "ghp_a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8": {"type": "string"}}}}},
+    }
+    rules = {f.rule for f in scan_request(body)}
+    assert {"aws_access_key", "github_token"} <= rules
+
+
+def test_json_escaped_secret_in_tool_arguments_is_found():
+    args = '{"k": "\\u0041KIAIOSFODNN7EXAMPLE"}'
+    body = {"messages": [{"role": "assistant", "content": None, "tool_calls": [
+        {"id": "1", "type": "function", "function": {"name": "f", "arguments": args}}]}]}
+    assert any(f.rule == "aws_access_key" for f in scan_request(body))
+
+
+def test_large_adversarial_input_scans_in_linear_time():
+    import time
+
+    t0 = time.monotonic()
+    for text in ("xoxb-" + "a-" * 100_000, "a:" * 100_000, "a@" * 100_000, "-----BEGIN " * 20_000):
+        list(scan_text(text, "x"))
+    assert time.monotonic() - t0 < 3  # was 36 s for the first input alone before quantifiers were bounded
