@@ -29,6 +29,13 @@ _CONFUSABLES = {
     "Ο": "O", "Ρ": "P", "Τ": "T", "Υ": "Y", "Χ": "X", "ο": "o", "ν": "v",
 }
 _TABLE: dict[int, str | None] | None = None
+# Unicode Default_Ignorable_Code_Point ranges (DerivedCoreProperties.txt) beyond category Cf: characters that render as
+# nothing, such as the combining grapheme joiner U+034F, Hangul fillers and variation selectors
+_DEFAULT_IGNORABLE = [
+    (0x00AD, 0x00AD), (0x034F, 0x034F), (0x061C, 0x061C), (0x115F, 0x1160), (0x17B4, 0x17B5), (0x180B, 0x180F),
+    (0x200B, 0x200F), (0x202A, 0x202E), (0x2060, 0x206F), (0x3164, 0x3164), (0xFE00, 0xFE0F), (0xFEFF, 0xFEFF),
+    (0xFFA0, 0xFFA0), (0xFFF0, 0xFFF8), (0x1BCA0, 0x1BCA3), (0x1D173, 0x1D17A), (0xE0000, 0xE0FFF),
+]
 
 
 def _table() -> dict[int, str | None]:
@@ -37,6 +44,8 @@ def _table() -> dict[int, str | None]:
     global _TABLE
     if _TABLE is None:
         t: dict[int, str | None] = {cp: None for cp in range(0x110000) if unicodedata.category(chr(cp)) == "Cf"}
+        for lo, hi in _DEFAULT_IGNORABLE:
+            t.update({cp: None for cp in range(lo, hi + 1)})
         t.update({ord(k): v for k, v in _CONFUSABLES.items()})
         _TABLE = t
     return _TABLE
@@ -46,16 +55,15 @@ def normalise(text: str) -> str:
     return unicodedata.normalize("NFKC", text).translate(_table())
 
 
-_B64 = re.compile(r"(?<![A-Za-z0-9+/_\-])[A-Za-z0-9+/_\-]{16,4096}={0,2}")
-MAX_B64_CANDIDATES = 256
+# Runs of base64 alphabet, any length (one class, greedy, anchored by the look-behind: linear time). There is no cap
+# on how many runs are decoded, so padding a prompt with decoys cannot push a real secret past the scanner.
+_B64 = re.compile(r"(?<![A-Za-z0-9+/_\-])[A-Za-z0-9+/_\-]{16,}={0,2}")
 
 
 def _decoded_base64(text: str) -> Iterator[str]:
-    """Bounded: at most MAX_B64_CANDIDATES runs of 16 to 4096 characters, one level deep, kept only when the decoded
-    bytes are mostly printable text. Enough to see a base64-wrapped key; not a general decoder."""
-    for i, m in enumerate(_B64.finditer(text)):
-        if i >= MAX_B64_CANDIDATES:
-            return
+    """One level deep, kept only when the decoded bytes are mostly printable text. Total work is linear in the input.
+    Enough to see a base64-wrapped key; not a general decoder (binary containers such as zip are not opened)."""
+    for m in _B64.finditer(text):
         tok = m.group(0)
         try:
             raw = base64.b64decode(tok.replace("-", "+").replace("_", "/") + "=" * (-len(tok) % 4), validate=True)
@@ -118,14 +126,14 @@ _RULES: list[tuple[str, re.Pattern, object]] = [
     ("slack_token", re.compile(r"\bxox[abposr]-[A-Za-z0-9-]{10,256}\b"), None),
     ("google_api_key", re.compile(r"\bAIza[0-9A-Za-z_\-]{35}\b"), None),
     ("jwt", re.compile(r"\beyJ[A-Za-z0-9_\-]{8,4096}\.[A-Za-z0-9_\-]{8,8192}\.[A-Za-z0-9_\-]{8,4096}\b"), _jwt),
-    ("credential_url", re.compile(r"\b[a-z][a-z0-9+.\-]{1,15}://[^\s:/@]{1,256}:[^\s@/]{1,256}@[^\s/]{1,256}"), None),
+    ("credential_url", re.compile(r"\b[a-z][a-z0-9+.\-]{1,15}://[^\s:/@]{1,256}:[^\s@/]{1,256}@[^\s/]{1,256}", re.IGNORECASE), None),
     ("payment_card", re.compile(r"\b(?:\d[ -]?){13,19}\b"), lambda m: _card(re.sub(r"\D", "", m))),
     ("us_ssn", re.compile(r"\b(?!000|666|9\d\d)\d{3}-(?!00)\d{2}-(?!0000)\d{4}\b"), None),
     ("email_address", re.compile(r"\b[A-Za-z0-9._%+\-]{1,64}@[A-Za-z0-9.\-]{1,253}\.[A-Za-z]{2,24}\b"), None),
     # not inside a hyphen-joined token (e.g. the digit runs of a Slack token), where a phone number never sits
     # and never a bare digit run without a leading +: timestamps and ids look exactly like that
-    ("phone_number", re.compile(r"(?<![\w\-])\+?\d{1,3}[ .\-]?\(?\d{2,4}\)?[ .\-]?\d{3,4}[ .\-]?\d{3,4}(?![\w\-])"),
-     lambda m: m.startswith("+") or bool(re.search(r"[ .\-()]", m))),
+    ("phone_number", re.compile(r"(?<![\w\-])\+?\d{1,3}[ \t.\-]?\(?\d{2,4}\)?[ \t.\-]?\d{3,4}[ \t.\-]?\d{3,4}(?![\w\-])"),
+     lambda m: m.startswith("+") or bool(re.search(r"[ \t.\-()]", m))),
 ]
 
 
@@ -182,15 +190,20 @@ def _walk(obj, where: str) -> Iterator[tuple[str, str]]:
                     stack.append((decoded, f"{w}<json>", depth + 1))
         elif isinstance(o, bool) or o is None:
             continue
-        elif isinstance(o, (int, float)):
-            yield w, repr(o) if isinstance(o, float) else str(o)
+        elif isinstance(o, int):
+            yield w, str(o)
+        elif isinstance(o, float):
+            yield w, repr(o)
+            if o.is_integer() and abs(o) < 1e30:  # 4.000000000000512e18 is also the 19-digit integer the model may read
+                yield w, str(int(o))
         elif isinstance(o, dict):
-            for k, v in o.items():
-                if isinstance(k, str):
-                    yield f"{w}.<key>", k
+            # children pushed in reverse so they come off the stack in document order (the classifier reads this text)
+            for k, v in reversed(list(o.items())):
                 stack.append((v, f"{w}.{k}", depth + 1))
+                if isinstance(k, str):
+                    stack.append((k, f"{w}.<key>", depth + 1))
         elif isinstance(o, list):
-            for i, v in enumerate(o):
+            for i, v in reversed(list(enumerate(o))):
                 stack.append((v, f"{w}[{i}]", depth + 1))
 
 

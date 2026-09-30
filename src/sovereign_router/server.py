@@ -57,6 +57,12 @@ def _validate(body) -> str | None:
             return f"messages[{i}]: must be an object with a role in {sorted(ROLES)}"
         if set(m) - MESSAGE_FIELDS:
             return f"messages[{i}]: unsupported field(s) {sorted(set(m) - MESSAGE_FIELDS)}"
+        problem = _check_tool_calls(m.get("tool_calls"), f"messages[{i}]")
+        if problem:
+            return problem
+        for k in ("name", "tool_call_id", "refusal"):
+            if m.get(k) is not None and not isinstance(m.get(k), str):
+                return f"messages[{i}].{k} must be a string"
         c = m.get("content")
         if isinstance(c, list):
             for p in c:
@@ -64,6 +70,32 @@ def _validate(body) -> str | None:
                     return f"messages[{i}]: only text content parts are supported in v0.1"
         elif c is not None and not isinstance(c, str):
             return f"messages[{i}]: content must be a string, null or a list of text parts"
+    for i, t in enumerate(body.get("tools") or []):
+        f = t.get("function") if isinstance(t, dict) else None
+        if not (isinstance(t, dict) and set(t) <= {"type", "function"} and t.get("type") == "function"
+                and isinstance(f, dict) and isinstance(f.get("name"), str)
+                and set(f) <= {"name", "description", "parameters", "strict"}):
+            return f"tools[{i}]: only function tools with name, description, parameters and strict are supported"
+    rf = body.get("response_format")
+    if rf is not None and not (isinstance(rf, dict) and rf.get("type") in ("text", "json_object", "json_schema")
+                               and set(rf) <= {"type", "json_schema"}):
+        return "response_format: type must be text, json_object or json_schema"
+    return None
+
+
+def _check_tool_calls(calls, where: str) -> str | None:
+    """Every tool call is a function call whose arguments are a string; any other shape could carry non-text payloads
+    (an image, a file) that the upstream would receive before rejecting it."""
+    if calls is None:
+        return None
+    if not isinstance(calls, list):
+        return f"{where}.tool_calls must be a list"
+    for j, tc in enumerate(calls):
+        f = tc.get("function") if isinstance(tc, dict) else None
+        if not (isinstance(tc, dict) and set(tc) <= {"id", "type", "function"} and tc.get("type") == "function"
+                and isinstance(tc.get("id", ""), str) and isinstance(f, dict) and set(f) <= {"name", "arguments"}
+                and isinstance(f.get("name"), str) and isinstance(f.get("arguments", ""), str)):
+            return f"{where}.tool_calls[{j}]: only function calls with a name and string arguments are supported"
     return None
 
 

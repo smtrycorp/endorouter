@@ -103,7 +103,7 @@ def test_redirects_are_never_followed(tmp_path):
 def test_audit_failure_blocks_dispatch(tmp_path):
     up = Upstream()
     cfg = make_cfg(tmp_path)
-    router = Router(cfg, client=httpx.AsyncClient(transport=httpx.MockTransport(up)),
+    router = Router(cfg, client=httpx.AsyncClient(transport=httpx.MockTransport(up), trust_env=False),
                     audit=AuditLog(str(tmp_path / "no-such-dir" / "audit.jsonl")))
     r = TestClient(create_app(cfg, router)).post("/v1/chat/completions", json=BODY)
     assert r.status_code == 503 and up.calls == []
@@ -115,7 +115,7 @@ def test_audit_records_decision_before_dispatch_and_holds_no_content(tmp_path):
     secret_body = {"model": "auto", "messages": [{"role": "user", "content": "my key AKIAIOSFODNN7EXAMPLE"}]}
     TestClient(app).post("/v1/chat/completions", json=secret_body)
     lines = [json.loads(x) for x in open(cfg.audit_log)]
-    assert [x["event"] for x in lines] == ["decision", "dispatched"]
+    assert [x["event"] for x in lines] == ["decision", "attempt", "dispatched"]
     assert lines[0]["label"] == "private" and "detector:aws_access_key" in lines[0]["reasons"]
     assert "AKIA" not in open(cfg.audit_log).read()
 

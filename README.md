@@ -51,7 +51,7 @@ x-sovereign-label: public
 
 Only clients listed in `trusted_clients` can declare anything public. Any client can declare `private`.
 
-**Detectors check formats, not word lists.** They cover private keys, cloud and SaaS tokens, JWTs with a decodable header, credentials in URLs, card numbers with a valid issuer prefix, length and Luhn checksum, US social security numbers, email addresses and phone numbers. They scan every field that is forwarded upstream: all messages including history, tool calls, tool results, tool definitions, stop sequences and response schemas. That includes dict keys, numbers, and JSON carried inside strings. Before matching, text is NFKC-normalised, every invisible format character is removed, and common Cyrillic and Greek look-alike letters are mapped to Latin. Short base64 runs are decoded one level and scanned too. Structure nested too deeply to inspect counts as a finding. Every pattern is bounded, so a large input scans in linear time.
+**Detectors check formats, not word lists.** They cover private keys, cloud and SaaS tokens, JWTs with a decodable header, credentials in URLs, card numbers with a valid issuer prefix, length and Luhn checksum, US social security numbers, email addresses and phone numbers. They scan every field that is forwarded upstream: all messages including history, tool calls, tool results, tool definitions, stop sequences and response schemas. That includes dict keys, numbers, and JSON carried inside strings. Before matching, text is NFKC-normalised, every invisible and default-ignorable character is removed, and common Cyrillic and Greek look-alike letters are mapped to Latin. Base64 runs are decoded one level and scanned too, with no cap on how many. Structure nested too deeply to inspect counts as a finding. Every pattern is bounded, so scanning takes linear time: about a second per megabyte on a laptop.
 
 What detectors cannot see: secrets split across messages, encrypted or compressed data, other encodings, and anything that is sensitive because of what it means rather than how it looks. That is the reason unlabelled work stays local by default.
 
@@ -62,10 +62,10 @@ These are enforced in code and pinned by tests.
 - A private or unknown request never selects a cloud target in strict mode. Asking for a cloud model by name is refused, not honoured.
 - If the local model is down, a private or unknown request fails. It never falls back to the cloud. A public request may fall back to any permitted target.
 - Fallback only moves between targets that were already permitted.
-- The audit record is flushed before dispatch. If the log cannot be written, the request is refused.
+- The decision is flushed to the audit log before anything is sent, and so is each attempt, naming its target, before that attempt. That includes the local classifier. If the log cannot be written, nothing is sent. Records are file-locked, so separate processes never interleave them.
 - The audit log holds decisions and reasons, never prompt content.
-- The HTTP client follows no redirects and ignores proxy environment variables.
-- Unknown request fields and non-text content are rejected rather than passed through unexamined.
+- The HTTP client follows no redirects and ignores proxy environment variables. As a library, the router refuses an injected client that trusts the environment, and it inspects and sends its own copy of the request.
+- Unknown request fields and non-text content are rejected rather than passed through unexamined. That covers nested tool calls, tools and response formats.
 - A typo in the config is an error, never a silent default.
 
 ## The trust boundary
@@ -90,7 +90,7 @@ Point the gateway's cloud destination at port 8799 and its local destination at 
 - A case reaches no sink and was not refused with HTTP 400, 403 or 451.
 - A successful answer did not come from one of the recording sinks. This means the gateway has a destination leakbench cannot see.
 
-Each refusal's response text is kept in the report, so a reader can check it was a policy decision.
+Each refusal's response text is kept in the report, so a reader can check it was a policy decision. A refusal is still the gateway's own claim, because leakbench cannot see egress outside its sinks. Reports therefore count refusals separately and mark them unverified.
 
 Results from 2026-09-30 are in [bench/RESULTS.md](bench/RESULTS.md), with the commands to reproduce them.
 

@@ -66,7 +66,7 @@ def test_serve_disables_proxy_headers():
 def test_injected_redirect_following_client_still_never_follows(tmp_path):
     up = Upstream({"local.test": "redirect"})
     cfg = make_cfg(tmp_path)
-    router = Router(cfg, client=httpx.AsyncClient(transport=httpx.MockTransport(up), follow_redirects=True))
+    router = Router(cfg, client=httpx.AsyncClient(transport=httpx.MockTransport(up), follow_redirects=True, trust_env=False))
     r = TestClient(create_app(cfg, router)).post("/v1/chat/completions",
                                                  json={"model": "auto", "messages": [{"role": "user", "content": AWS}]})
     assert r.status_code == 502 and "evil.test" not in up.calls
@@ -156,7 +156,7 @@ def test_classifier_send_is_blocked_when_audit_fails(tmp_path):
     calls = []
     cfg = _balanced(tmp_path)
     client = httpx.AsyncClient(transport=httpx.MockTransport(lambda r: calls.append(r.url.host) or httpx.Response(
-        200, json={"choices": [{"message": {"content": "PUBLIC"}}]})))
+        200, json={"choices": [{"message": {"content": "PUBLIC"}}]})), trust_env=False)
     router = Router(cfg, client=client, audit=AuditLog(str(tmp_path / "missing" / "a.jsonl")))
     r = TestClient(create_app(cfg, router)).post("/v1/chat/completions", json={"model": "auto", "messages": [{"role": "user", "content": "hi"}]})
     assert r.status_code == 503 and calls == []

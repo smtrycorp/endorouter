@@ -9,6 +9,7 @@ Dispatch rules:
 
 from __future__ import annotations
 
+import copy
 import os
 import time
 import uuid
@@ -56,6 +57,9 @@ def make_client() -> httpx.AsyncClient:
 
 class Router:
     def __init__(self, cfg: Config, client: httpx.AsyncClient | None = None, audit: AuditLog | None = None):
+        if client is not None and client.trust_env:
+            # trust_env lets HTTP_PROXY / HTTPS_PROXY send even "local" traffic through an outside proxy
+            raise ValueError("an injected httpx client must be created with trust_env=False")
         self.cfg = cfg
         self.client = client or make_client()
         self.audit = audit or AuditLog(cfg.audit_log)
@@ -95,6 +99,10 @@ class Router:
         capability: str | None = None,
     ) -> Routed:
         request_id = uuid.uuid4().hex[:16]
+        # inspect and send one private snapshot: a caller that mutates its own objects mid-flight cannot change
+        # what is sent after it was inspected
+        body = copy.deepcopy(body)
+        sources = tuple(str(s) for s in sources)
         decision, _ = await self.plan(body, sources=sources, declared=declared, capability=capability, request_id=request_id)
         # written and flushed before anything leaves; raises AuditError (the caller refuses) if the log is unwritable
         self.audit.write({"event": "decision", "request_id": request_id, "mode": self.cfg.mode,
@@ -111,6 +119,8 @@ class Router:
                 key = os.environ.get(target.api_key_env, "")
                 if key:
                     headers["authorization"] = f"Bearer {key}"
+            # the actual destination is on disk before each send, including fallbacks
+            self.audit.write({"event": "attempt", "request_id": request_id, "target": target.name, "location": target.location})
             try:
                 req = self.client.build_request("POST", f"{target.url}/chat/completions", json=upstream, headers=headers,
                                                 timeout=target.timeout_s)

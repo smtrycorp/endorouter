@@ -24,6 +24,7 @@ from dataclasses import dataclass, field
 import posixpath
 import re
 from fnmatch import fnmatchcase
+from urllib.parse import unquote, urlsplit
 from typing import Sequence
 
 from .config import Config, Target
@@ -59,30 +60,36 @@ def canonical_source(source: str) -> str | None:
 
     Globs treat '*' as matching '/', so 'docs/public/../internal/plan.md' would match 'docs/public/**'. Paths are
     therefore normalised first, and a path that still climbs above its root, or holds a NUL, is not matchable.
-    URLs are matched as given, with the scheme and host lowercased, and any userinfo refused.
+    URLs are split into components, the scheme and host lowercased, userinfo refused, the fragment dropped, and only the
+    path normalised.
     """
     s = source.strip()
     if not s or "\x00" in s:
         return None
     if _URL.match(s):
-        scheme, rest = s.split("://", 1)
-        host, sep, path = rest.partition("/")
-        if "@" in host:
+        # split into components FIRST, so a fragment or query can never take part in path resolution
+        # (https://h/private/x#/../../public/y is the private resource x)
+        try:
+            u = urlsplit(s)
+            host = (u.hostname or "").lower()
+            port = f":{u.port}" if u.port else ""
+        except ValueError:
             return None
-        # decode percent escapes and resolve dot segments, so /public/../private or /public/%2e%2e/private
-        # is matched where it actually points; a path that climbs above the root is not matchable
-        from urllib.parse import unquote
-
-        path, qmark, query = path.partition("?")
-        path = unquote(path)
+        if not host or u.username is not None or u.password is not None or "@" in u.netloc:
+            return None
+        path = unquote(u.path)
         if "\x00" in path or "\\" in path:
             return None
+        # drop matrix parameters (/public/..;/private is /public/../private to many servers), then resolve dot
+        # segments; a path that climbs above the root is not matchable
+        path = re.sub(r";[^/]*", "", path)
         if path:
-            resolved = posixpath.normpath("/" + path)
-            if resolved.startswith("//") or ".." in resolved.split("/"):
+            resolved = posixpath.normpath("/" + path.lstrip("/"))
+            if ".." in resolved.split("/"):
                 return None
-            path = resolved.lstrip("/") + ("/" if path.endswith("/") and resolved != "/" else "")
-        return f"{scheme.lower()}://{host.lower()}{sep}{path}{qmark}{query}"
+            path = resolved + ("/" if path.endswith("/") and resolved != "/" else "")
+        query = f"?{u.query}" if u.query else ""
+        return f"{u.scheme.lower()}://{host}{port}{path}{query}"
     norm = posixpath.normpath(s.replace("\\", "/"))
     if norm == ".." or norm.startswith("../") or "/../" in norm:
         return None

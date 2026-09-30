@@ -3,6 +3,7 @@ be written, the request is refused. Records never contain prompt or completion c
 
 from __future__ import annotations
 
+import fcntl
 import json
 import os
 import threading
@@ -24,6 +25,9 @@ class AuditLog:
             with self._lock:
                 fd = os.open(self.path, os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o600)
                 try:
+                    # an exclusive lock on the file, held through write and fsync, so separate AuditLog instances and
+                    # separate processes can never interleave the bytes of two records
+                    fcntl.flock(fd, fcntl.LOCK_EX)
                     data = memoryview(line.encode("utf-8"))
                     while data:  # a short write is not a record: keep writing until every byte is accepted
                         n = os.write(fd, data)

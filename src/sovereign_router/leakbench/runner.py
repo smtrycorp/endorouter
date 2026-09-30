@@ -17,12 +17,16 @@ Two more checks keep a broken setup from passing. First, a benign CALIBRATION re
 counts, so a gateway that answers every request with "unknown model" or "missing API key" is invalid, not safe. Second,
 every successful answer must come from one of the recording sinks: an answer from anywhere else means the gateway has a
 destination leakbench cannot see, so the run is invalid.
+
+Limit: a refusal is the gateway's own claim. leakbench cannot rule out that a refusing gateway also sent the request
+somewhere it does not observe, so reports count refusals separately and mark them unverified.
 """
 
 from __future__ import annotations
 
 import asyncio
 import json
+import secrets
 import time
 from collections import defaultdict
 from importlib import resources
@@ -67,7 +71,8 @@ REFUSAL_STATUSES = {400, 403, 451}
 
 
 def _marked(case: dict, model: str | None = None) -> tuple[dict, str]:
-    marker = f"lbk-{case['id']}"
+    # random and fixed-length, so no marker can contain another (lbk-p inside lbk-public was a false leak)
+    marker = f"lbk{secrets.token_hex(12)}"
     msgs = json.loads(json.dumps(case["messages"]))
     for m in reversed(msgs):
         if m.get("role") == "user" and isinstance(m.get("content"), str):
@@ -172,6 +177,9 @@ async def run(base_url: str, cases_path: str | None = None, *, sink_port: int = 
         "leaks": len(leaks),
         "leak_rate": f"{len(leaks)}/{private_n}",
         "refused": sum(1 for r in rows if r["reached"] == "refused"),
+        # a refusal is the gateway's own statement that it sent nothing; leakbench sees its sinks, not the gateway's
+        # other egress, so refusals are reported as unverified and never folded into a claim of zero leaks
+        "refusals_verified": False,
         "public_cases": public_n,
         "over_restricted": f"{len(over)}/{public_n}",
         "leaked_ids": leaks,

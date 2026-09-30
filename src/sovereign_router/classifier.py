@@ -20,7 +20,9 @@ PROMPT = (
     "PUBLIC = general knowledge, public documentation, open-source code, or text written to be published.\n"
     "If unsure, answer PRIVATE.\nAnswer with exactly one word: PRIVATE or PUBLIC.\n\nTEXT:\n{text}\n\nANSWER:"
 )
-_VERDICT = re.compile(r"^\W*(PRIVATE|PUBLIC)\W*$")  # the whole answer is one verdict word, or it grants nothing
+# the whole answer is one verdict word, optionally quoted or bolded and ending in a full stop; anything else ("not
+# PUBLIC", "!PUBLIC", "¬PUBLIC", a list) grants nothing
+_VERDICT = re.compile(r"[\"'`*]*(PRIVATE|PUBLIC)[\"'`*]*\.?")
 MAX_CHARS = 12000
 
 
@@ -42,10 +44,12 @@ async def classify(cfg: Config, body: dict, client: httpx.AsyncClient) -> Label 
             follow_redirects=False,
         )
         r.raise_for_status()
-        answer = r.json()["choices"][0]["message"]["content"] or ""
+        answer = r.json()["choices"][0]["message"]["content"]
+        if not isinstance(answer, str):
+            return None
+        m = _VERDICT.fullmatch(answer.strip().upper())
     except Exception:  # noqa: BLE001
         return None
-    m = _VERDICT.match(answer.strip().upper())
     if not m:
         return None
     return Label.PRIVATE if m.group(1) == "PRIVATE" else Label.PUBLIC
