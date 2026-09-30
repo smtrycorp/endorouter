@@ -453,3 +453,27 @@ def test_ordinary_assignments_are_not_passwords(text):
 def test_a_process_titled_like_ollama_is_judged_by_its_executable():
     assert discover._program("/usr/local/bin/node\0ollama serve") is None
     assert discover._program("/usr/local/bin/ollama\0/usr/local/bin/ollama serve") == "ollama"
+
+
+# QC round 9
+@pytest.mark.parametrize("text", [
+    '{"db_password": "Xk9!pQ2#vL7$mR4&z*r(p9)w1%t6b3j5-h"}',
+    '"DB_PASSWORD=Xk9!pQ2#vL7$mR4&",',
+    'password: "Xk9!pQ2#vL7$mR4&z*r(p9)"',
+])
+def test_passwords_in_json_yaml_and_env_lists_are_found(text):
+    assert "secret_shape" in {f.rule for f in scan_text(text, "x")}
+
+
+@pytest.mark.parametrize("text", [
+    '"integrity": "sha512-7mJJl+wf1AByoT0PknQiQfOPnVNT4fevGrUBVWO4HXsnYn1aQ=="',
+    '"path": "KeyPairs[].KeyName"',
+    "headers: CIMultiDict[str]",
+    'fmt: "%(asctime)s %(levelname)s %(message)s"',
+])
+def test_ordinary_config_and_code_values_are_left_alone(text):
+    assert "secret_shape" not in {f.rule for f in scan_text(text, "x")}
+
+
+def test_password_only_redis_url_is_a_credential_url():
+    assert "credential_url" in {f.rule for f in scan_text("CELERY_BROKER_URL=redis://:hunter2hunter2@redis:6379/0", "x")}

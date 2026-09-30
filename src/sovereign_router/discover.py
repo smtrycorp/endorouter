@@ -189,7 +189,10 @@ def find_local(timeout: float = 1.0) -> tuple[list[tuple[str, str, str, str | No
             program = verified_program(url)
             if program is None:
                 owners = _port_owners(url) or []
+                import shutil
+
                 shown = "; ".join(o.split("\0")[-1][:160] for o in owners) or (
+                    "unknown, because lsof is not installed" if not shutil.which("lsof") else
                     "a program this user cannot see (on Linux, a service running as another user, such as the ollama "
                     "service, is invisible to this check)")
                 notes.append(f"found a server at {url} but could not verify it runs models on this machine. It is "
@@ -218,7 +221,15 @@ def auto_config(timeout: float = 1.0, trust: tuple[str, ...] = ()) -> tuple[dict
         if name not in known:
             raise RuntimeError(f"--trust {name}: unknown server name (one of {', '.join(known)})")
         url = known[name]
-        if any(n == name for n, _, _, _ in local):
+        verified = next((entry for entry in local if entry[0] == name), None)
+        if verified is not None:
+            if pinned:  # already verified: honour the model the user named, after the same checks
+                with httpx.Client(timeout=timeout, trust_env=False, follow_redirects=False) as c:
+                    listed = [m.get("id") for m in c.get(f"{url}/models").json()["data"] if isinstance(m, dict) and m.get("id")]
+                    usable = _local_models(c, url, listed, ollama_api=_speaks_ollama(c, url))
+                if pinned not in usable:
+                    raise RuntimeError(f"--trust {name}={pinned}: not listed, or hosted remotely")
+                local[local.index(verified)] = (name, url, pinned, verified[3])
             continue
         try:
             with httpx.Client(timeout=timeout, trust_env=False, follow_redirects=False) as c:

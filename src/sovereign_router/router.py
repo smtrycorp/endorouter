@@ -83,7 +83,7 @@ class Router:
             ct = self.cfg.target(self.cfg.classifier.target or "")
             # the classifier receives the prompt text too: its port is re-verified like any other send, and an
             # unverified port means no verdict (which never grants anything)
-            if ct is not None and (not ct.verify_program or self._still_verified(ct, request_id or "")):
+            if ct is not None and (not ct.verify_program or await self._still_verified(ct, request_id or "")):
                 self.audit.write({"event": "classifier_dispatch", "request_id": request_id, "target": ct.name})
                 verdict = await classify(self.cfg, body, self.client)
         d = decide(
@@ -122,7 +122,7 @@ class Router:
         attempts: list[dict] = []
         stream = bool(body.get("stream"))
         for target in permitted_targets(self.cfg, decision):
-            if target.verify_program and not self._still_verified(target, request_id):
+            if target.verify_program and not await self._still_verified(target, request_id):
                 attempts.append({"target": target.name, "error": "port_not_verified"})
                 continue
             t0 = time.monotonic()
@@ -159,13 +159,16 @@ class Router:
         self.audit.write({"event": "failed", "request_id": request_id, "attempts": attempts})
         raise UpstreamFailed(request_id, attempts)
 
-    def _still_verified(self, target: Target, request_id: str) -> bool:
+    async def _still_verified(self, target: Target, request_id: str) -> bool:
+        import asyncio
+
         from .discover import verified_program
 
         now = time.monotonic()
         if now - self._verified_at.get(target.name, -10.0) < 1.0:
             return True
-        if verified_program(target.url) == target.verify_program:
+        # lsof and ps run in a worker thread, so the check never stalls other requests in flight
+        if await asyncio.to_thread(verified_program, target.url) == target.verify_program:
             self._verified_at[target.name] = now
             return True
         self._verified_at.pop(target.name, None)

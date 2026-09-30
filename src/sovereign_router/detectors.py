@@ -151,7 +151,7 @@ _RULES: list[tuple[str, re.Pattern, object]] = [
         r"|AIza[0-9A-Za-z_\-]{8,34})\b"), None),
     ("private_key_boundary", re.compile(r"-----END (?:[A-Z0-9 ]{1,64} )?PRIVATE KEY-----"), None),
     ("jwt", re.compile(r"\beyJ[A-Za-z0-9_\-]{8,4096}\.[A-Za-z0-9_\-]{8,8192}\.[A-Za-z0-9_\-]{8,4096}\b"), _jwt),
-    ("credential_url", re.compile(r"\b[a-z][a-z0-9+.\-]{1,15}://[^\s:/@]{1,256}:[^\s@/]{1,256}@[^\s/]{1,256}", re.IGNORECASE), None),
+    ("credential_url", re.compile(r"\b[a-z][a-z0-9+.\-]{1,15}://[^\s:/@]{0,256}:[^\s@/]{1,256}@[^\s/]{1,256}", re.IGNORECASE), None),  # redis://:password@host too
     ("payment_card", re.compile(r"\b(?:\d[ -]?){13,40}\b"), lambda m: _card_in_groups(m)),
     ("us_ssn", re.compile(r"\b(?!000|666|9\d\d)\d{3}-(?!00)\d{2}-(?!0000)\d{4}\b"), None),
     ("email_address", re.compile(r"\b[A-Za-z0-9._%+\-]{1,64}@[A-Za-z0-9.\-]{1,253}\.[A-Za-z]{2,24}\b"), None),
@@ -215,17 +215,24 @@ def _secret_shaped(tok: str, before: str) -> bool:
 
 # a value assigned to an UPPER_SNAKE name (NAME=value, NAME: value): generated passwords and Django-style keys carry
 # punctuation that splits them into short tokens, so the whole value is scored, punctuation as its own class
-_CRED_VALUE = re.compile(r"(?:^|[\s;])(?:export\s+)?[A-Z][A-Z0-9_]{2,63}\s*[=:]\s*(['\"]?)([^\s'\"]{16,256})\1(?=\s|$|[;,])")
+_CRED_VALUE = [
+    # NAME=value, NAME: value, "NAME=value" (env lists), with or without quotes around the name
+    re.compile(r"(?:^|[\s;,{\[])(?:export\s+)?[\"']?[A-Z][A-Z0-9_]{2,63}[\"']?\s*[=:]\s*([\"']?)([^\s'\"]{16,256})\1(?=\s|$|[;,}\]\"'])"),
+    # a quoted JSON pair, any case: "db_password": "..."
+    re.compile(r"[\"'][A-Za-z_][A-Za-z0-9_.\-]{1,63}[\"']\s*:\s*([\"'])([^\s'\"]{16,256})\1"),
+    # a YAML key with a quoted value, any case: password: "..."
+    re.compile(r"(?m)^\s*-?\s*[A-Za-z_][A-Za-z0-9_.\-]{1,63}\s*:\s*([\"'])([^\s'\"]{16,256})\1\s*$"),
+]
 
 
 _CODE_EXPR = re.compile(r"[A-Za-z_][\w.]*(?:\(.*\))?,?")  # an identifier, attribute or call: code, not a secret
-_SECRET_PUNCT = set("!@#$%^&*+=~?<>|{}[]")
+_SECRET_PUNCT = set("!@#$%^&*~?<>|")  # password punctuation; not base64's + / =, not code's brackets
 
 
 def _punct_secret(v: str) -> bool:
     if "://" in v or sum(len(r) for r in re.findall(r"[a-z]{4,}", v)) / len(v) > 0.35:
         return False  # URLs are the credential_url rule's; word-like values are settings, not secrets
-    if _CODE_EXPR.fullmatch(v) or sum(c in _SECRET_PUNCT for c in v) < 2:
+    if _CODE_EXPR.fullmatch(v) or _DIGEST.match(v) or sum(c in _SECRET_PUNCT for c in v) < 2:
         return False
     kinds = {("d" if c.isdigit() else "u" if c.isupper() else "l" if c.islower() else "p") for c in v}
     if "p" not in kinds or len(kinds) < 3:
@@ -242,10 +249,11 @@ def _shape_findings(t: str, where: str) -> Iterator[Finding]:
         if _secret_shaped(m.group(0), t[max(0, m.start() - 80):m.start()]):
             yield Finding("secret_shape", where)
             return
-    for m in _CRED_VALUE.finditer(t):
-        if _punct_secret(m.group(2)):
-            yield Finding("secret_shape", where)
-            return
+    for rx in _CRED_VALUE:
+        for m in rx.finditer(t):
+            if _punct_secret(m.group(2)):
+                yield Finding("secret_shape", where)
+                return
 
 
 # a run of single characters separated by single spaces ("A K I A I O S F ...", "e y J . ..."): a secret typed out
