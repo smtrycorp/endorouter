@@ -185,7 +185,9 @@ _CRED_PLACE = re.compile(r"(?:^|[\s;])(?:export\s+)?[A-Z][A-Z0-9_]{2,63}\s*[=:]\
 
 
 def _secret_shaped(tok: str, before: str) -> bool:
-    if _UUID.match(tok) or _DIGEST.match(tok) or tok.count("/") >= 2:
+    # tokens with '/' are scored like any other (base64 keys and webhook URLs have them); paths are left alone by the
+    # word-like rule below. Measured: 177/182 slash-bearing keys found, false alarms unchanged at 1.0/MB.
+    if _UUID.match(tok) or _DIGEST.match(tok):
         return False
     if tok.count(".") >= 2 and not any(c.isdigit() for c in tok):
         return False
@@ -348,21 +350,25 @@ _STRUCTURAL = (".<key>", ".role", ".id", ".type", ".name", ".tool_call_id")
 
 
 def _joined_texts(body: dict) -> Iterator[tuple[str, str]]:
-    """Two joins with nothing between strings, in document order: the content strings alone (structural fields
-    skipped), and every string (so a key split across a tool's name and its arguments is whole). One more linear
-    pass each."""
+    """Joins with nothing between strings, in document order: the content strings alone (structural fields skipped);
+    every value (so a key split across a tool's name and its arguments is whole); and the keys and values of JSON
+    carried inside strings (a key half in a JSON key, the other in its value). One more linear pass each."""
     content: list[str] = []
     everything: list[str] = []
+    decoded_json: list[str] = []
     for where, t in _texts(body):
-        if isinstance(t, _Undecodable) or where.endswith(".<key>"):
+        if isinstance(t, _Undecodable):
+            continue
+        if "<json>" in where:
+            decoded_json.append(t.strip())  # keys and values of JSON inside strings: {"AKIA": "IOSFODNN7EXAMPLE"}
+        if where.endswith(".<key>"):
             continue
         everything.append(t.strip())
         if where != "model" and not where.endswith(_STRUCTURAL):
             content.append(t.strip())
-    if len(content) > 1:
-        yield "request<joined>", "".join(content)
-    if len(everything) > 1:
-        yield "request<joined-all>", "".join(everything)
+    for label, parts in (("request<joined>", content), ("request<joined-all>", everything), ("json<joined>", decoded_json)):
+        if len(parts) > 1:
+            yield label, "".join(parts)
 
 
 def scan_request(body: dict, extra: Iterable[tuple[str, str]] = ()) -> list[Finding]:

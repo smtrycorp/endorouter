@@ -349,21 +349,51 @@ def test_ollama_embedding_only_models_are_not_picked():
     assert discover._ollama_remote(C(), "http://127.0.0.1:11434/v1", "nomic-embed-text")
 
 
-def test_a_verified_target_whose_port_changes_hands_while_running_is_disabled(monkeypatch, tmp_path):
+def test_a_verified_port_is_checked_before_every_send(monkeypatch, tmp_path):
     cfg = parse_config({"version": 1, "audit_log": str(tmp_path / "a.jsonl"), "targets": {
         "ollama": {"url": "http://local.test:11434/v1", "model": "m", "location": "local", "verify_program": "ollama"}}})
+    sent = []
 
     def up(req):
-        raise httpx.ConnectError("gone", request=req)
+        sent.append(req.url.host)
+        return httpx.Response(200, json={"choices": [{"message": {"content": "ok"}}]})
 
-    monkeypatch.setattr(discover, "_port_owners", lambda url: ["/usr/bin/python3 proxy.py"])
     router = Router(cfg, client=httpx.AsyncClient(transport=httpx.MockTransport(up), trust_env=False))
     body = {"model": "auto", "messages": [{"role": "user", "content": "hi"}]}
-    for _ in range(2):
-        with pytest.raises(Exception):
-            asyncio.run(router.route(body))
-    events = [json.loads(x)["event"] for x in open(cfg.audit_log)]
-    assert "target_disabled" in events and router._disabled == {"ollama"}
+    # a forwarding server took the port while the router ran, with no failed request in between
+    monkeypatch.setattr(discover, "_port_owners", lambda url: ["/usr/bin/python3 wrapper.py"])
+    with pytest.raises(Exception):
+        asyncio.run(router.route(body))
+    assert sent == [] and "target_unverified" in open(cfg.audit_log).read()
+    # the verified program is back (an Ollama restart): the target is used again, no router restart needed
+    monkeypatch.setattr(discover, "_port_owners", lambda url: ["/usr/local/bin/ollama serve"])
+    asyncio.run(router.route(body))
+    assert sent == ["local.test"]
+
+
+@pytest.mark.parametrize("text", ["AWS_SECRET_ACCESS_KEY=q8Zr/Kd2Vx7Lm/Pw4Tb9Hn1Yc6Fj3Gs5Ae0Uo2Ri",  # realistic; AWS docs example ends in a plain word and is missed
+                                  "https://hooks.slack.com/services/T024BE7LD/B01ABCDEF12/aB3dE5fG7hJ9kL1mN3pQ5rS7"])
+def test_keys_containing_slashes_are_scored(text):
+    assert "secret_shape" in {f.rule for f in scan_text(text, "x")}
+
+
+def test_ordinary_paths_and_urls_are_still_left_alone():
+    for t in ["see src/sovereign_router/leakbench/runner.py", "docs at https://docs.python.org/3/library/re.html"]:
+        assert "secret_shape" not in {f.rule for f in scan_text(t, "x")}
+
+
+def test_key_split_between_a_json_key_and_its_value_is_found():
+    assert "aws_access_key" in {f.rule for f in scan_request({"messages": [
+        {"role": "user", "content": '{"AKIA": "IOSFODNN7EXAMPLE"}'}]})}
+
+
+@pytest.mark.parametrize("cmd,expected", [
+    ("/usr/local/bin/node\0/usr/local/bin/node /Users/me/LM Studio.app/proxy.js", None),
+    ("/Applications/LM Studio.app/Contents/MacOS/LM Studio\0/Applications/LM Studio.app/Contents/MacOS/LM Studio", "lm studio"),
+    ("/usr/local/bin/node /Users/me/LM Studio.app/proxy.js", None),
+])
+def test_app_bundle_is_judged_from_the_executable_only(cmd, expected):
+    assert discover._program(cmd.replace("\\0", "\0")) == expected
 
 
 def test_duplicate_config_keys_and_null_audit_log_are_errors(tmp_path):

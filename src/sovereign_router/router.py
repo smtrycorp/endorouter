@@ -63,9 +63,9 @@ class Router:
             raise ValueError("an injected httpx client must be created with trust_env=False")
         self.cfg = cfg
         self.client = client or make_client()
-        # targets discovery verified are re-checked on the first connection error; a port that changed hands is
-        # never used again by this process
-        self._disabled: set[str] = set()
+        # targets discovery verified are re-checked before every send (cached for a second): a port that changed
+        # hands is skipped, and used again only once the verified program is back on it
+        self._verified_at: dict[str, float] = {}
         self.audit = audit or AuditLog(cfg.audit_log)
 
     async def plan(
@@ -119,8 +119,8 @@ class Router:
         attempts: list[dict] = []
         stream = bool(body.get("stream"))
         for target in permitted_targets(self.cfg, decision):
-            if target.name in self._disabled:
-                attempts.append({"target": target.name, "error": "port_changed_hands"})
+            if target.verify_program and not self._still_verified(target, request_id):
+                attempts.append({"target": target.name, "error": "port_not_verified"})
                 continue
             t0 = time.monotonic()
             requested = str(body.get("model") or "")
@@ -143,13 +143,7 @@ class Router:
                 resp = await self.client.send(req, stream=stream, follow_redirects=False)
             except httpx.HTTPError as e:
                 attempts.append({"target": target.name, "error": type(e).__name__, "ms": int((time.monotonic() - t0) * 1000)})
-                if target.verify_program and isinstance(e, httpx.TransportError):
-                    from .discover import verified_program
-
-                    if verified_program(target.url) != target.verify_program:
-                        self._disabled.add(target.name)
-                        self.audit.write({"event": "target_disabled", "request_id": request_id, "target": target.name,
-                                          "reason": "port no longer served by the verified program"})
+                self._verified_at.pop(target.name, None)  # after a failure, look again next time
                 continue
             if resp.status_code in RETRYABLE or 300 <= resp.status_code < 400:
                 attempts.append({"target": target.name, "status": resp.status_code, "ms": int((time.monotonic() - t0) * 1000)})
@@ -161,6 +155,20 @@ class Router:
             return Routed(request_id, decision, target, resp)
         self.audit.write({"event": "failed", "request_id": request_id, "attempts": attempts})
         raise UpstreamFailed(request_id, attempts)
+
+    def _still_verified(self, target: Target, request_id: str) -> bool:
+        from .discover import verified_program
+
+        now = time.monotonic()
+        if now - self._verified_at.get(target.name, -10.0) < 1.0:
+            return True
+        if verified_program(target.url) == target.verify_program:
+            self._verified_at[target.name] = now
+            return True
+        self._verified_at.pop(target.name, None)
+        self.audit.write({"event": "target_unverified", "request_id": request_id, "target": target.name,
+                          "reason": f"port not served by {target.verify_program} right now"})
+        return False
 
     async def aclose(self) -> None:
         await self.client.aclose()

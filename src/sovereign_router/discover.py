@@ -5,6 +5,7 @@ names that hold secrets. A user who wants more (public sources, balanced mode) e
 from __future__ import annotations
 
 import os
+import re
 from pathlib import Path
 
 import httpx
@@ -55,9 +56,16 @@ def _program(cmdline: str) -> str | None:
     run from ~/vllm-tests/ must not count as vLLM)."""
     import shlex
 
-    # an app bundle's executable path can contain spaces and ps prints it unquoted: check the bundle first
-    if cmdline.startswith("/") and ".app/" in cmdline:
-        bundle = Path(cmdline.split(".app/", 1)[0] + ".app").name
+    # the executable path (ps comm) comes first when known; an app bundle is judged from it alone, never from the
+    # arguments (node '/Users/me/LM Studio.app/proxy.js' is node)
+    exe_path, sep, rest = cmdline.partition("\0")
+    if sep:
+        cmdline = rest
+    else:
+        m = re.match(r"^(/(?:[^/]+/)*?[^/]+\.app/Contents/MacOS/[^/]+?)(?:\s+-|$)", cmdline)
+        exe_path = m.group(1) if m else ""
+    if exe_path.startswith("/") and ".app/" in exe_path:
+        bundle = Path(exe_path.split(".app/", 1)[0] + ".app").name
         if bundle in LOCAL_INFERENCE_APPS:
             return "lm studio"
     try:
@@ -105,8 +113,12 @@ def _port_owners(url: str) -> list[str] | None:
                               timeout=5).stdout.split()
         if not pids:
             return None
-        return [subprocess.run(["ps", "-o", "command=", "-p", pid], capture_output=True, text=True, timeout=5).stdout.strip()
-                for pid in dict.fromkeys(pids)]
+        owners = []
+        for pid in dict.fromkeys(pids):
+            exe = subprocess.run(["ps", "-o", "comm=", "-p", pid], capture_output=True, text=True, timeout=5).stdout.strip()
+            cmd = subprocess.run(["ps", "-o", "command=", "-p", pid], capture_output=True, text=True, timeout=5).stdout.strip()
+            owners.append(f"{exe}\0{cmd}" if exe else cmd)  # executable path, then the full command line
+        return owners
     except (OSError, subprocess.SubprocessError):
         return None
 
@@ -171,7 +183,7 @@ def find_local(timeout: float = 1.0) -> tuple[list[tuple[str, str, str, str | No
             program = verified_program(url)
             if program is None:
                 owners = _port_owners(url) or []
-                shown = "; ".join(o[:160] for o in owners) or "a program this user cannot see"
+                shown = "; ".join(o.split("\0")[-1][:160] for o in owners) or "a program this user cannot see"
                 notes.append(f"found a server at {url} but could not verify it runs models on this machine. It is "
                              f"served by: {shown}. Not used. Only if that program runs models here, trust it with "
                              f"`sovereign-router init --trust {name}=<model>` naming the local model to use")
