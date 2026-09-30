@@ -8,11 +8,11 @@
 |---|---|---|
 | sovereign-router 0.1, strict, with provenance headers | 0 of 24 | 3 of 5 |
 | sovereign-router 0.1, strict, no provenance headers | 0 of 24 | 5 of 5 |
-| sovereign-router 0.1, balanced, local 30B classifier | 0 of 24 | 0 of 5 |
+| sovereign-router 0.1, balanced, local 30B classifier | 0 of 24 | 1 of 5 (0 of 5 on an earlier run) |
 | LiteLLM 1.103.1, content filter on every request | 13 of 24 | 0 of 5 |
 | Pass-through control (cloud declared local) | 24 of 24 | 0 of 5 |
 
-All five runs are valid. In each, the calibration request reached a sink, every case reached a sink or was refused, and every answer came from a recording sink. All 11 LiteLLM refusals were its content filter reporting a matched pattern, and the reports keep each refusal message.
+All five runs are valid. In each, the calibration request reached a sink, every case reached a sink or was refused, and every answer came from a recording sink. All 11 LiteLLM refusals were its content filter reporting a matched pattern, and the reports keep each refusal message. A refusal is still the gateway's own claim, so leakbench reports refusals separately and marks them unverified. Counting them as safe favours LiteLLM.
 
 ## By category
 
@@ -44,17 +44,14 @@ Each cell shows private cases leaked, or public cases kept off the cloud, out of
 
 ## Balanced mode
 
-In balanced mode, unlabelled work may go to the cloud when no detector fires and a local model classifies it as public. For this run the classifier was a 30B open-weight model, quantised to 4 bits, running on the same laptop (an M2 Max with 64 GB). Its verdicts, taken from the audit log:
+In balanced mode, unlabelled work may go to the cloud when no detector fires and a local model classifies it as public. The classifier here was a 30B open-weight model, quantised to 4 bits, running on the same laptop (an M2 Max with 64 GB). We ran the suite twice, before and after the second review round.
 
-| Classifier verdict | Requests |
-|---|---|
-| Private, so kept local | 22 |
-| Public, so cleared for the cloud | 4 (the 3 unlabelled public questions and the calibration request) |
-| No usable verdict | 0 |
+- **Private prompts.** In both runs, no private case reached the cloud. The classifier called all 5 confidential prose cases private.
+- **Unlabelled public prompts.** In both runs, the classifier cleared all 3 for the cloud.
+- **The flip.** A public-source request with no substance, "Explain what this README section means for a new user", was cleared in the first run and kept local in the second. The classifier may tighten any request, even one with public provenance, so a flip like this costs a cloud trip and never causes a leak.
+- **Latency.** Every unlabelled request waits for the classifier. The first run averaged about 9.5 seconds per request on that machine.
 
-It classified all 5 confidential prose cases as private. That removes the over-restriction cost of strict mode on this suite.
-
-The cost is latency. The run averaged about 9.5 seconds per request on that machine, because every unlabelled request waits for the classifier. The confidential cases here are also fairly plain. A harder suite, with subtle confidential text and public text that mentions confidentiality, is the next thing to build before claiming more.
+The confidential cases in this suite are fairly plain. A harder suite, with subtle confidential text and public text that mentions confidentiality, is the next thing to build before claiming more.
 
 ## How LiteLLM was configured
 
@@ -68,6 +65,8 @@ LiteLLM's documentation describes a `sensitive_data_routing` guardrail that rero
 In this release that filter blocked on detection with HTTP 400 and did not reroute. leakbench counts a block as safe, so this choice favours LiteLLM on leak rate. The full config is in `litellm-leakbench.yaml`.
 
 ## Reproduce
+
+`bench/run_all.sh` runs every configuration. Step by step:
 
 ```
 python -m venv bench/.litellm-venv

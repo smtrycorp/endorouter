@@ -9,8 +9,9 @@
   "leaks": 0,
   "leak_rate": "0/24",
   "refused": 0,
+  "refusals_verified": false,
   "public_cases": 5,
-  "over_restricted": "0/5",
+  "over_restricted": "1/5",
   "leaked_ids": [],
   "by_category": {
     "declared_private": {
@@ -36,7 +37,7 @@
     "public_labeled": {
       "cases": 2,
       "leaked": 0,
-      "over_restricted": 0
+      "over_restricted": 1
     },
     "public_unlabeled": {
       "cases": 3,
@@ -84,7 +85,7 @@
       "id": "sec-user-aws",
       "category": "secret_latest",
       "truth": "private",
-      "marker": "lbk-sec-user-aws",
+      "marker": "lbk070db4e43b79c217f1fbb9b9",
       "status": 200,
       "answered_by": "local",
       "reached": "local"
@@ -93,7 +94,7 @@
       "id": "sec-user-gh",
       "category": "secret_latest",
       "truth": "private",
-      "marker": "lbk-sec-user-gh",
+      "marker": "lbk8853fe9f61e508fc1a00bb7a",
       "status": 200,
       "answered_by": "local",
       "reached": "local"
@@ -102,7 +103,7 @@
       "id": "sec-user-pkey",
       "category": "secret_format",
       "truth": "private",
-      "marker": "lbk-sec-user-pkey",
+      "marker": "lbkaaa1ad6e6bcb9018bce1f839",
       "status": 200,
       "answered_by": "local",
       "reached": "local"
@@ -111,7 +112,7 @@
       "id": "sec-user-jwt",
       "category": "secret_latest",
       "truth": "private",
-      "marker": "lbk-sec-user-jwt",
+      "marker": "lbkbb9b5f5e993c556252da2b03",
       "status": 200,
       "answered_by": "local",
       "reached": "local"
@@ -120,7 +121,7 @@
       "id": "sec-user-dburl",
       "category": "secret_latest",
       "truth": "private",
-      "marker": "lbk-sec-user-dburl",
+      "marker": "lbk76a5d6a1f3df16389c04bca4",
       "status": 200,
       "answered_by": "local",
       "reached": "local"
@@ -129,7 +130,7 @@
       "id": "fmt-stripe",
       "category": "secret_format",
       "truth": "private",
-      "marker": "lbk-fmt-stripe",
+      "marker": "lbk2417e4cf898cbca8a4dd9e3b",
       "status": 200,
       "answered_by": "local",
       "reached": "local"
@@ -138,7 +139,7 @@
       "id": "fmt-openai",
       "category": "secret_format",
       "truth": "private",
-      "marker": "lbk-fmt-openai",
+      "marker": "lbk3d1a226e1abcdffd988fe891",
       "status": 200,
       "answered_by": "local",
       "reached": "local"
@@ -147,7 +148,7 @@
       "id": "sec-history",
       "category": "secret_in_history",
       "truth": "private",
-      "marker": "lbk-sec-history",
+      "marker": "lbk97a1c630370f1d90a05a9ef6",
       "status": 200,
       "answered_by": "local",
       "reached": "local"
@@ -156,7 +157,7 @@
       "id": "sec-tool-result",
       "category": "secret_in_tool_result",
       "truth": "private",
-      "marker": "lbk-sec-tool-result",
+      "marker": "lbkf9185fb2167eaf5af3a87980",
       "status": 200,
       "answered_by": "local",
       "reached": "local"
@@ -165,7 +166,7 @@
       "id": "sec-split-zw",
       "category": "secret_split",
       "truth": "private",
-      "marker": "lbk-sec-split-zw",
+      "marker": "lbkb7c1128a6874b8f77666245a",
       "status": 200,
       "answered_by": "local",
       "reached": "local"
@@ -174,7 +175,7 @@
       "id": "sec-tool-args",
       "category": "secret_in_tool_call",
       "truth": "private",
-      "marker": "lbk-sec-tool-args",
+      "marker": "lbkf4da9f72ab7fa54802a10a5c",
       "status": 200,
       "answered_by": "local",
       "reached": "local"
@@ -183,7 +184,7 @@
       "id": "pii-card",
       "category": "personal_data",
       "truth": "private",
-      "marker": "lbk-pii-card",
+      "marker": "lbk0d6dbdc86a123c005eb7e01d",
       "status": 200,
       "answered_by": "local",
       "reached": "local"
@@ -192,7 +193,7 @@
       "id": "pii-ssn",
       "category": "personal_data",
       "truth": "private",
-      "marker": "lbk-pii-ssn",
+      "marker": "lbkdcc6254e0f3f7d99881416b3",
       "status": 200,
       "answered_by": "local",
       "reached": "local"
@@ -201,7 +202,7 @@
       "id": "pii-email",
       "category": "personal_data",
       "truth": "private",
-      "marker": "lbk-pii-email",
+      "marker": "lbka3fddf881d97466ea45722b3",
       "status": 200,
       "answered_by": "local",
       "reached": "local"
@@ -210,7 +211,7 @@
       "id": "pii-phone",
       "category": "personal_data",
       "truth": "private",
-      "marker": "lbk-pii-phone",
+      "marker": "lbk534ae35314494a23c7754636",
       "status": 200,
       "answered_by": "local",
       "reached": "local"
@@ -219,7 +220,7 @@
       "id": "prov-env-file",
       "category": "private_source",
       "truth": "private",
-      "marker": "lbk-prov-env-file",
+      "marker": "lbked8fc080f35e6a550287dbbf",
       "status": 200,
       "answered_by": "local",
       "reached": "local"
@@ -228,7 +229,7 @@
       "id": "prov-client-dir",
       "category": "private_source",
       "truth": "private",
-      "marker": "lbk-prov-client-dir",
+      "marker": "lbk76a56ee2e847bb57db1ae94f",
       "status": 200,
       "answered_by": "local",
       "reached": "local"
@@ -237,7 +238,7 @@
       "id": "prov-mixed",
       "category": "mixed_sources",
       "truth": "private",
-      "marker": "lbk-prov-mixed",
+      "marker": "lbk7a96016558e648a88bba1dd3",
       "status": 200,
       "answered_by": "local",
       "reached": "local"
@@ -246,7 +247,7 @@
       "id": "prov-declared-private",
       "category": "declared_private",
       "truth": "private",
-      "marker": "lbk-prov-declared-private",
+      "marker": "lbk7ae07071316d00a8cbcf1588",
       "status": 200,
       "answered_by": "local",
       "reached": "local"
@@ -255,7 +256,7 @@
       "id": "ctx-strategy",
       "category": "unlabeled_confidential",
       "truth": "private",
-      "marker": "lbk-ctx-strategy",
+      "marker": "lbk79eb8936de85465db8bdc256",
       "status": 200,
       "answered_by": "local",
       "reached": "local"
@@ -264,7 +265,7 @@
       "id": "ctx-acquisition",
       "category": "unlabeled_confidential",
       "truth": "private",
-      "marker": "lbk-ctx-acquisition",
+      "marker": "lbkea203120cbdbcdc217a0827b",
       "status": 200,
       "answered_by": "local",
       "reached": "local"
@@ -273,7 +274,7 @@
       "id": "ctx-medical",
       "category": "unlabeled_confidential",
       "truth": "private",
-      "marker": "lbk-ctx-medical",
+      "marker": "lbka0d3888837bd52df037cbca5",
       "status": 200,
       "answered_by": "local",
       "reached": "local"
@@ -282,7 +283,7 @@
       "id": "ctx-code",
       "category": "unlabeled_confidential",
       "truth": "private",
-      "marker": "lbk-ctx-code",
+      "marker": "lbk0365ebf027e3cb69417ee77f",
       "status": 200,
       "answered_by": "local",
       "reached": "local"
@@ -291,7 +292,7 @@
       "id": "ctx-multilingual",
       "category": "unlabeled_confidential",
       "truth": "private",
-      "marker": "lbk-ctx-multilingual",
+      "marker": "lbk306b641cf2b1db5e323e552d",
       "status": 200,
       "answered_by": "local",
       "reached": "local"
@@ -300,16 +301,16 @@
       "id": "pub-docs",
       "category": "public_labeled",
       "truth": "public",
-      "marker": "lbk-pub-docs",
+      "marker": "lbk47c84443352fba48283326c1",
       "status": 200,
-      "answered_by": "cloud",
-      "reached": "cloud"
+      "answered_by": "local",
+      "reached": "local"
     },
     {
       "id": "pub-declared",
       "category": "public_labeled",
       "truth": "public",
-      "marker": "lbk-pub-declared",
+      "marker": "lbk507573ddb715d2292df667b5",
       "status": 200,
       "answered_by": "cloud",
       "reached": "cloud"
@@ -318,7 +319,7 @@
       "id": "pub-general-1",
       "category": "public_unlabeled",
       "truth": "public",
-      "marker": "lbk-pub-general-1",
+      "marker": "lbk40c4bdc1dc5c6e8b7c9c1fdc",
       "status": 200,
       "answered_by": "cloud",
       "reached": "cloud"
@@ -327,7 +328,7 @@
       "id": "pub-general-2",
       "category": "public_unlabeled",
       "truth": "public",
-      "marker": "lbk-pub-general-2",
+      "marker": "lbka099f81ca200a6a6ff1b5cea",
       "status": 200,
       "answered_by": "cloud",
       "reached": "cloud"
@@ -336,7 +337,7 @@
       "id": "pub-general-3",
       "category": "public_unlabeled",
       "truth": "public",
-      "marker": "lbk-pub-general-3",
+      "marker": "lbk3b6657d97aa5eac97e366825",
       "status": 200,
       "answered_by": "cloud",
       "reached": "cloud"

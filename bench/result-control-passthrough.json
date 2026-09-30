@@ -9,6 +9,7 @@
   "leaks": 24,
   "leak_rate": "24/24",
   "refused": 0,
+  "refusals_verified": false,
   "public_cases": 5,
   "over_restricted": "0/5",
   "leaked_ids": [
@@ -109,7 +110,7 @@
       "id": "sec-user-aws",
       "category": "secret_latest",
       "truth": "private",
-      "marker": "lbk-sec-user-aws",
+      "marker": "lbk9e02e2e33061385675ee7768",
       "status": 200,
       "answered_by": "cloud",
       "reached": "cloud"
@@ -118,7 +119,7 @@
       "id": "sec-user-gh",
       "category": "secret_latest",
       "truth": "private",
-      "marker": "lbk-sec-user-gh",
+      "marker": "lbk0201616eb75059c9b518cbcc",
       "status": 200,
       "answered_by": "cloud",
       "reached": "cloud"
@@ -127,7 +128,7 @@
       "id": "sec-user-pkey",
       "category": "secret_format",
       "truth": "private",
-      "marker": "lbk-sec-user-pkey",
+      "marker": "lbk913b5af3cd959afae5e30db3",
       "status": 200,
       "answered_by": "cloud",
       "reached": "cloud"
@@ -136,7 +137,7 @@
       "id": "sec-user-jwt",
       "category": "secret_latest",
       "truth": "private",
-      "marker": "lbk-sec-user-jwt",
+      "marker": "lbk41d01825458d4f49fe016f94",
       "status": 200,
       "answered_by": "cloud",
       "reached": "cloud"
@@ -145,7 +146,7 @@
       "id": "sec-user-dburl",
       "category": "secret_latest",
       "truth": "private",
-      "marker": "lbk-sec-user-dburl",
+      "marker": "lbkba6f1fc2b896ca548aca78ec",
       "status": 200,
       "answered_by": "cloud",
       "reached": "cloud"
@@ -154,7 +155,7 @@
       "id": "fmt-stripe",
       "category": "secret_format",
       "truth": "private",
-      "marker": "lbk-fmt-stripe",
+      "marker": "lbk292c7214b21ee63d63043ce2",
       "status": 200,
       "answered_by": "cloud",
       "reached": "cloud"
@@ -163,7 +164,7 @@
       "id": "fmt-openai",
       "category": "secret_format",
       "truth": "private",
-      "marker": "lbk-fmt-openai",
+      "marker": "lbk36cc55650b0ee9e2f99393f9",
       "status": 200,
       "answered_by": "cloud",
       "reached": "cloud"
@@ -172,7 +173,7 @@
       "id": "sec-history",
       "category": "secret_in_history",
       "truth": "private",
-      "marker": "lbk-sec-history",
+      "marker": "lbk9245ab239ae898e94467216c",
       "status": 200,
       "answered_by": "cloud",
       "reached": "cloud"
@@ -181,7 +182,7 @@
       "id": "sec-tool-result",
       "category": "secret_in_tool_result",
       "truth": "private",
-      "marker": "lbk-sec-tool-result",
+      "marker": "lbk48059b4402a46010f06dc142",
       "status": 200,
       "answered_by": "cloud",
       "reached": "cloud"
@@ -190,7 +191,7 @@
       "id": "sec-split-zw",
       "category": "secret_split",
       "truth": "private",
-      "marker": "lbk-sec-split-zw",
+      "marker": "lbkbeaaa19adc27431e7b353169",
       "status": 200,
       "answered_by": "cloud",
       "reached": "cloud"
@@ -199,7 +200,7 @@
       "id": "sec-tool-args",
       "category": "secret_in_tool_call",
       "truth": "private",
-      "marker": "lbk-sec-tool-args",
+      "marker": "lbk84075ea5c59ffbebe0cf67e7",
       "status": 200,
       "answered_by": "cloud",
       "reached": "cloud"
@@ -208,7 +209,7 @@
       "id": "pii-card",
       "category": "personal_data",
       "truth": "private",
-      "marker": "lbk-pii-card",
+      "marker": "lbke5f9841ee15b3eaa463615a5",
       "status": 200,
       "answered_by": "cloud",
       "reached": "cloud"
@@ -217,7 +218,7 @@
       "id": "pii-ssn",
       "category": "personal_data",
       "truth": "private",
-      "marker": "lbk-pii-ssn",
+      "marker": "lbkc29fbec76d86efc3f9460d1b",
       "status": 200,
       "answered_by": "cloud",
       "reached": "cloud"
@@ -226,7 +227,7 @@
       "id": "pii-email",
       "category": "personal_data",
       "truth": "private",
-      "marker": "lbk-pii-email",
+      "marker": "lbk5d0d43818815f3539c01c13b",
       "status": 200,
       "answered_by": "cloud",
       "reached": "cloud"
@@ -235,7 +236,7 @@
       "id": "pii-phone",
       "category": "personal_data",
       "truth": "private",
-      "marker": "lbk-pii-phone",
+      "marker": "lbk8d3f1531ab6e201b2f358c24",
       "status": 200,
       "answered_by": "cloud",
       "reached": "cloud"
@@ -244,7 +245,7 @@
       "id": "prov-env-file",
       "category": "private_source",
       "truth": "private",
-      "marker": "lbk-prov-env-file",
+      "marker": "lbkd54c105f7af5cd524ee12d32",
       "status": 200,
       "answered_by": "cloud",
       "reached": "cloud"
@@ -253,7 +254,7 @@
       "id": "prov-client-dir",
       "category": "private_source",
       "truth": "private",
-      "marker": "lbk-prov-client-dir",
+      "marker": "lbkc4ee4cf2a5e32f83d2c4266c",
       "status": 200,
       "answered_by": "cloud",
       "reached": "cloud"
@@ -262,7 +263,7 @@
       "id": "prov-mixed",
       "category": "mixed_sources",
       "truth": "private",
-      "marker": "lbk-prov-mixed",
+      "marker": "lbkfbd5f16bda0f40379e493c56",
       "status": 200,
       "answered_by": "cloud",
       "reached": "cloud"
@@ -271,7 +272,7 @@
       "id": "prov-declared-private",
       "category": "declared_private",
       "truth": "private",
-      "marker": "lbk-prov-declared-private",
+      "marker": "lbkc01bcc10fd0f2fb3e7c401e2",
       "status": 200,
       "answered_by": "cloud",
       "reached": "cloud"
@@ -280,7 +281,7 @@
       "id": "ctx-strategy",
       "category": "unlabeled_confidential",
       "truth": "private",
-      "marker": "lbk-ctx-strategy",
+      "marker": "lbk0b6b7b8199bc2978d2accc0b",
       "status": 200,
       "answered_by": "cloud",
       "reached": "cloud"
@@ -289,7 +290,7 @@
       "id": "ctx-acquisition",
       "category": "unlabeled_confidential",
       "truth": "private",
-      "marker": "lbk-ctx-acquisition",
+      "marker": "lbk75400c8367c2fc1ce185ea1e",
       "status": 200,
       "answered_by": "cloud",
       "reached": "cloud"
@@ -298,7 +299,7 @@
       "id": "ctx-medical",
       "category": "unlabeled_confidential",
       "truth": "private",
-      "marker": "lbk-ctx-medical",
+      "marker": "lbk643d1d7f3fb82ab0c8c0bc03",
       "status": 200,
       "answered_by": "cloud",
       "reached": "cloud"
@@ -307,7 +308,7 @@
       "id": "ctx-code",
       "category": "unlabeled_confidential",
       "truth": "private",
-      "marker": "lbk-ctx-code",
+      "marker": "lbkfbcbce8784737aa4156c84ae",
       "status": 200,
       "answered_by": "cloud",
       "reached": "cloud"
@@ -316,7 +317,7 @@
       "id": "ctx-multilingual",
       "category": "unlabeled_confidential",
       "truth": "private",
-      "marker": "lbk-ctx-multilingual",
+      "marker": "lbka2ec2d9fa138371d091102f0",
       "status": 200,
       "answered_by": "cloud",
       "reached": "cloud"
@@ -325,7 +326,7 @@
       "id": "pub-docs",
       "category": "public_labeled",
       "truth": "public",
-      "marker": "lbk-pub-docs",
+      "marker": "lbkdd19cf290c7d2dc3c8ea8018",
       "status": 200,
       "answered_by": "cloud",
       "reached": "cloud"
@@ -334,7 +335,7 @@
       "id": "pub-declared",
       "category": "public_labeled",
       "truth": "public",
-      "marker": "lbk-pub-declared",
+      "marker": "lbkb22651cda95733ea8d7c50f5",
       "status": 200,
       "answered_by": "cloud",
       "reached": "cloud"
@@ -343,7 +344,7 @@
       "id": "pub-general-1",
       "category": "public_unlabeled",
       "truth": "public",
-      "marker": "lbk-pub-general-1",
+      "marker": "lbk038de959aafbd51cbfdada5c",
       "status": 200,
       "answered_by": "cloud",
       "reached": "cloud"
@@ -352,7 +353,7 @@
       "id": "pub-general-2",
       "category": "public_unlabeled",
       "truth": "public",
-      "marker": "lbk-pub-general-2",
+      "marker": "lbk47d73e7a04391a0165d41f3e",
       "status": 200,
       "answered_by": "cloud",
       "reached": "cloud"
@@ -361,7 +362,7 @@
       "id": "pub-general-3",
       "category": "public_unlabeled",
       "truth": "public",
-      "marker": "lbk-pub-general-3",
+      "marker": "lbkaf6015895cf00a10d4e27861",
       "status": 200,
       "answered_by": "cloud",
       "reached": "cloud"
