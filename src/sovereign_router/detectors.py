@@ -125,6 +125,13 @@ _RULES: list[tuple[str, re.Pattern, object]] = [
     ("stripe_key", re.compile(r"\b(?:sk|rk)_(?:live|test)_[A-Za-z0-9]{16,256}\b"), None),
     ("slack_token", re.compile(r"\bxox[abposr]-[A-Za-z0-9-]{10,256}\b"), None),
     ("google_api_key", re.compile(r"\bAIza[0-9A-Za-z_\-]{35}\b"), None),
+    # A distinctive issuer prefix standing alone, too short to be a whole key, is still credential material: a key
+    # split across messages ("first half: AKIAIOSF", "second half: ...") never appears whole in any one string.
+    ("secret_fragment", re.compile(
+        r"\b(?:(?:AKIA|ASIA)[0-9A-Z]{4,15}|gh[pousr]_[A-Za-z0-9]{4,35}|github_pat_[A-Za-z0-9_]{4,59}"
+        r"|sk-(?:proj|ant|svcacct|admin)-[A-Za-z0-9_\-]{4,19}|(?:sk|rk)_live_[A-Za-z0-9]{4,15}|xox[abposr]-\d{4,9}"
+        r"|AIza[0-9A-Za-z_\-]{8,34})\b"), None),
+    ("private_key_boundary", re.compile(r"-----END (?:[A-Z0-9 ]{1,64} )?PRIVATE KEY-----"), None),
     ("jwt", re.compile(r"\beyJ[A-Za-z0-9_\-]{8,4096}\.[A-Za-z0-9_\-]{8,8192}\.[A-Za-z0-9_\-]{8,4096}\b"), _jwt),
     ("credential_url", re.compile(r"\b[a-z][a-z0-9+.\-]{1,15}://[^\s:/@]{1,256}:[^\s@/]{1,256}@[^\s/]{1,256}", re.IGNORECASE), None),
     ("payment_card", re.compile(r"\b(?:\d[ -]?){13,19}\b"), lambda m: _card(re.sub(r"\D", "", m))),
@@ -145,12 +152,22 @@ def _scan_normalised(t: str, where: str) -> Iterator[Finding]:
                 break
 
 
+# a run of single characters separated by single spaces or hyphens ("A K I A I O S F ..."): a secret typed out letter
+# by letter; bounded and linear
+_SPACED = re.compile(r"(?<![A-Za-z0-9])(?:[A-Za-z0-9][ \-]){7,4096}[A-Za-z0-9](?![A-Za-z0-9])")
+
+
 def scan_text(text: str, where: str) -> Iterator[Finding]:
     t = normalise(text)
     seen = set()
     for f in _scan_normalised(t, where):
         seen.add(f.rule)
         yield f
+    for m in _SPACED.finditer(t):
+        for f in _scan_normalised(re.sub(r"[ \-]", "", m.group(0)), f"{where}<spaced>"):
+            if f.rule not in seen:
+                seen.add(f.rule)
+                yield f
     for decoded in _decoded_base64(t):
         for f in _scan_normalised(normalise(decoded), f"{where}<base64>"):
             if f.rule not in seen:

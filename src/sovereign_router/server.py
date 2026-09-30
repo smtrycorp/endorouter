@@ -77,9 +77,41 @@ def _validate(body) -> str | None:
                 and set(f) <= {"name", "description", "parameters", "strict"}):
             return f"tools[{i}]: only function tools with name, description, parameters and strict are supported"
     rf = body.get("response_format")
-    if rf is not None and not (isinstance(rf, dict) and rf.get("type") in ("text", "json_object", "json_schema")
-                               and set(rf) <= {"type", "json_schema"}):
-        return "response_format: type must be text, json_object or json_schema"
+    if rf is not None:
+        js = rf.get("json_schema") if isinstance(rf, dict) else None
+        if not (isinstance(rf, dict) and rf.get("type") in ("text", "json_object", "json_schema") and set(rf) <= {"type", "json_schema"}
+                and (js is None or (isinstance(js, dict) and set(js) <= {"name", "description", "schema", "strict"}))):
+            return "response_format: type must be text, json_object or json_schema with name, description, schema and strict"
+    return _check_scalars(body)
+
+
+def _is_num(v) -> bool:
+    return isinstance(v, (int, float)) and not isinstance(v, bool)
+
+
+def _check_scalars(body: dict) -> str | None:
+    """Every other supported field has one plain shape; anything else is refused rather than forwarded."""
+    checks = {
+        "stream": lambda v: isinstance(v, bool),
+        "stream_options": lambda v: isinstance(v, dict) and set(v) <= {"include_usage"} and isinstance(v.get("include_usage", False), bool),
+        "temperature": _is_num, "top_p": _is_num, "presence_penalty": _is_num, "frequency_penalty": _is_num,
+        "max_tokens": lambda v: isinstance(v, int) and not isinstance(v, bool),
+        "max_completion_tokens": lambda v: isinstance(v, int) and not isinstance(v, bool),
+        "n": lambda v: isinstance(v, int) and not isinstance(v, bool),
+        "seed": lambda v: isinstance(v, int) and not isinstance(v, bool),
+        "top_logprobs": lambda v: isinstance(v, int) and not isinstance(v, bool),
+        "logprobs": lambda v: isinstance(v, bool),
+        "parallel_tool_calls": lambda v: isinstance(v, bool),
+        "user": lambda v: isinstance(v, str),
+        "stop": lambda v: isinstance(v, str) or (isinstance(v, list) and all(isinstance(x, str) for x in v)),
+        "logit_bias": lambda v: isinstance(v, dict) and all(isinstance(k, str) and _is_num(x) for k, x in v.items()),
+        "tool_choice": lambda v: v in ("none", "auto", "required") or (
+            isinstance(v, dict) and set(v) <= {"type", "function"} and v.get("type") == "function"
+            and isinstance(v.get("function"), dict) and set(v["function"]) <= {"name"} and isinstance(v["function"].get("name"), str)),
+    }
+    for k, ok in checks.items():
+        if k in body and body[k] is not None and not ok(body[k]):
+            return f"{k}: unsupported value shape"
     return None
 
 
