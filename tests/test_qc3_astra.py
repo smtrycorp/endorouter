@@ -80,10 +80,10 @@ def test_discovery_does_not_trust_an_unverified_gateway(monkeypatch):
         def post(self, *a, **k): return Resp()
 
     monkeypatch.setattr(discover.httpx, "Client", C)
-    monkeypatch.setattr(discover, "_port_owner", lambda url: "/usr/bin/python3 -m litellm --port 8000")
+    monkeypatch.setattr(discover, "_port_owners", lambda url: ["/usr/bin/python3 -m litellm --port 8000"])
     found, notes = discover.find_local()
     assert found == [] and any("--trust" in n for n in notes)
-    monkeypatch.setattr(discover, "_port_owner", lambda url: "/opt/homebrew/bin/llama-server -m model.gguf")
+    monkeypatch.setattr(discover, "_port_owners", lambda url: ["/opt/homebrew/bin/llama-server -m model.gguf"])
     found, _ = discover.find_local()
     assert len(found) == len(discover.LOCAL_SERVERS)  # a verified local-inference program owns each port
 
@@ -92,6 +92,8 @@ def test_ollama_cloud_models_are_not_local():
     class C:
         def post(self, *a, **k):
             class R:
+                status_code = 200
+
                 def json(self): return {"remote_host": "https://ollama.com:443", "remote_model": "gpt-oss:120b"}
             return R()
 
@@ -165,6 +167,9 @@ def test_leakbench_keeps_case_request_fields():
     ("/usr/local/bin/ollama serve", "ollama"),
     ("/Applications/LM Studio.app/Contents/MacOS/LM Studio", "lm studio"),
     ("/Users/me/ollama-proxy/bin/node server.js", None),
+    ("/usr/bin/python3 proxy.py -m vllm", None),                         # a -m after the script is the script's flag
+    ("/usr/bin/python3 -X dev -m vllm.entrypoints.openai.api_server", "vllm"),
+    ("/usr/bin/python3 -c 'import vllm'", None),
 ])
 def test_discovery_matches_programs_exactly(cmd, expected):
     assert discover._program(cmd) == expected
@@ -186,3 +191,88 @@ def test_classifier_prompt_fences_the_text_with_a_fresh_boundary(tmp_path):
         asyncio.run(classify(_balanced(tmp_path), body, client))
     fences = [next(l for l in s.splitlines() if l.startswith("=====DATA-") and l != "=====DATA-0000=====") for s in seen]
     assert fences[0] != fences[1]
+
+
+# QC round 5
+def test_every_listener_on_the_port_must_be_the_same_trusted_program(monkeypatch):
+    monkeypatch.setattr(discover, "_port_owners", lambda url: ["/usr/local/bin/ollama serve", "/usr/bin/python3 gw.py"])
+    assert discover.verified_program("http://127.0.0.1:11434/v1") is None
+    monkeypatch.setattr(discover, "_port_owners", lambda url: ["/usr/local/bin/ollama serve"])
+    assert discover.verified_program("http://127.0.0.1:11434/v1") == "ollama"
+
+
+def test_ollama_error_answers_count_as_remote():
+    class C:
+        def post(self, *a, **k):
+            class R:
+                status_code = 404
+
+                def json(self): return {"error": "model not found"}
+            return R()
+
+    assert discover._ollama_remote(C(), "http://127.0.0.1:11434/v1", "llama3.2")
+
+
+def test_trust_never_pins_a_hosted_model(monkeypatch):
+    class Resp:
+        def __init__(self, data, code=200):
+            self._d, self.status_code = data, code
+
+        def json(self):
+            return self._d
+
+    class C:
+        def __init__(self, *a, **k): pass
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+
+        def get(self, url):
+            if url.endswith("/api/version"):
+                return Resp({"version": "0.12"})
+            return Resp({"data": [{"id": "gpt-oss:120b-cloud"}, {"id": "llama3.2:3b"}]})
+
+        def post(self, url, json=None):
+            return Resp({"remote_host": "https://ollama.com"} if "cloud" in json["model"] else {"details": {}})
+
+    monkeypatch.setattr(discover.httpx, "Client", C)
+    monkeypatch.setattr(discover, "find_local", lambda timeout=1.0: ([], []))
+    raw, notes = discover.auto_config(trust=("ollama",))
+    assert raw["targets"]["ollama"]["model"] == "llama3.2:3b" and "verify_program" not in raw["targets"]["ollama"]
+    with pytest.raises(RuntimeError, match="unknown server name"):
+        discover.auto_config(trust=("olama",))
+
+
+@pytest.mark.parametrize("body", [
+    {"messages": [{"role": "user", "content": "AKIA"}, {"role": "assistant", "content": None, "tool_calls": [
+        {"id": "x", "type": "function", "function": {"name": "f", "arguments": "IOSFODNN7EXAMPLE"}}]}]},
+    {"messages": [{"role": "assistant", "content": None, "tool_calls": [{"id": "x", "type": "function", "function": {
+        "name": "f", "arguments": '{"key_prefix": "AKIA", "key_secret": "IOSFODNN7EXAMPLE"}'}}]}]},
+])
+def test_keys_split_across_any_fields_are_rejoined(body):
+    assert "aws_access_key" in {f.rule for f in scan_request(body)}
+
+
+def test_spaced_jwt_with_dots_is_found():
+    jwt = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.dozjgNryP4J3jVmNHl0w5N_XgL0n3I9PlFUP0THsR8U"
+    assert "jwt" in {f.rule for f in scan_text(" ".join(jwt), "x")}
+
+
+def test_a_verified_target_is_refused_when_its_port_changes_hands(monkeypatch, tmp_path):
+    from sovereign_router import cli
+
+    cfg = parse_config({"version": 1, "audit_log": str(tmp_path / "a.jsonl"), "targets": {
+        "ollama": {"url": "http://127.0.0.1:11434/v1", "model": "llama3.2", "location": "local", "verify_program": "ollama"}}})
+    monkeypatch.setattr(discover, "_port_owners", lambda url: ["/usr/local/bin/ollama serve"])
+    assert cli._reverify(cfg) == []
+    monkeypatch.setattr(discover, "_port_owners", lambda url: ["/usr/bin/python3 proxy.py"])
+    assert cli._reverify(cfg) and "no longer served by ollama" in cli._reverify(cfg)[0]
+
+
+def test_models_list_shows_pass_through_targets_with_their_request_form(tmp_path):
+    from starlette.testclient import TestClient
+
+    from sovereign_router.server import create_app
+
+    cfg = _passthrough(tmp_path)
+    ids = [m["id"] for m in TestClient(create_app(cfg)).get("/v1/models").json()["data"]]
+    assert "openai/*" in ids and "openai" not in ids

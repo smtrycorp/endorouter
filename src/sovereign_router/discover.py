@@ -73,18 +73,26 @@ def _program(cmdline: str) -> str | None:
     if name in LOCAL_INFERENCE_PROGRAMS:
         return name
     if name.startswith("python"):
-        if "-m" in argv[1:]:
-            i = argv.index("-m")
-            mod = argv[i + 1].split(".")[0].lower() if i + 1 < len(argv) else ""
-            return mod if mod in LOCAL_INFERENCE_PROGRAMS else None
-        script = next((a for a in argv[1:] if not a.startswith("-")), "")
-        base = Path(script).name.lower()
-        return base if base in LOCAL_INFERENCE_PROGRAMS else None
+        # interpreter options come first; the first non-option is the script, or '-m <module>' names a module.
+        # A '-m' after the script belongs to the script (python proxy.py -m vllm is not vLLM).
+        i = 1
+        while i < len(argv):
+            a = argv[i]
+            if a == "-m":
+                mod = argv[i + 1].split(".")[0].lower() if i + 1 < len(argv) else ""
+                return mod if mod in LOCAL_INFERENCE_PROGRAMS else None
+            if a == "-c" or not a.startswith("-"):
+                break
+            i += 2 if a in ("-X", "-W", "-Q") else 1
+        if i < len(argv) and not argv[i].startswith("-"):
+            base = Path(argv[i]).name.lower()
+            return base if base in LOCAL_INFERENCE_PROGRAMS else None
+        return None
     return None
 
 
-def _port_owner(url: str) -> str | None:
-    """The full command line of the process listening on the url's port, or None if it cannot be determined."""
+def _port_owners(url: str) -> list[str] | None:
+    """The command line of every process listening on the url's port, or None if that cannot be determined."""
     import shutil
     import subprocess
     from urllib.parse import urlsplit
@@ -97,25 +105,56 @@ def _port_owner(url: str) -> str | None:
                               timeout=5).stdout.split()
         if not pids:
             return None
-        return subprocess.run(["ps", "-o", "command=", "-p", pids[0]], capture_output=True, text=True, timeout=5).stdout.strip()
+        return [subprocess.run(["ps", "-o", "command=", "-p", pid], capture_output=True, text=True, timeout=5).stdout.strip()
+                for pid in dict.fromkeys(pids)]
     except (OSError, subprocess.SubprocessError):
         return None
 
 
+def verified_program(url: str) -> str | None:
+    """The local-inference program behind a port, when EVERY process listening on it is that same program."""
+    owners = _port_owners(url)
+    if not owners:
+        return None
+    programs = {_program(o) for o in owners}
+    return programs.pop() if len(programs) == 1 and None not in programs else None
+
+
+def _port_owner(url: str) -> str | None:  # kept for the notes printed to the user
+    owners = _port_owners(url)
+    return owners[0] if owners else None
+
+
 def _ollama_remote(c: httpx.Client, url: str, model: str) -> bool:
     """Ollama can serve hosted 'cloud' models behind a local port; those report a remote host, or carry 'cloud' in
-    their tag. Treated as remote when in doubt."""
-    if "cloud" in model.split(":")[-1] or model.endswith("-cloud"):
+    their tag. Anything but a clean answer counts as remote."""
+    if "cloud" in model.lower():
         return True
     try:
-        info = c.post(url.rsplit("/v1", 1)[0] + "/api/show", json={"model": model}).json()
+        r = c.post(url.rsplit("/v1", 1)[0] + "/api/show", json={"model": model})
+        info = r.json()
     except Exception:  # noqa: BLE001
         return True
-    return bool(info.get("remote_host") or info.get("remote_model")) or not isinstance(info, dict)
+    if r.status_code != 200 or not isinstance(info, dict):
+        return True
+    return bool(info.get("remote_host") or info.get("remote_model"))
 
 
-def find_local(timeout: float = 1.0) -> tuple[list[tuple[str, str, str]], list[str]]:
-    """Verified local servers as (name, url, model), plus notes on servers found but not trusted."""
+def _local_models(c: httpx.Client, url: str, models: list[str], ollama_api: bool) -> list[str]:
+    """Models that run here: never one whose name says cloud, and for an Ollama API never one it reports as remote."""
+    keep = [m for m in models if "cloud" not in m.lower()]
+    return [m for m in keep if not _ollama_remote(c, url, m)] if ollama_api else keep
+
+
+def _speaks_ollama(c: httpx.Client, url: str) -> bool:
+    try:
+        return c.get(url.rsplit("/v1", 1)[0] + "/api/version").status_code == 200
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def find_local(timeout: float = 1.0) -> tuple[list[tuple[str, str, str, str | None]], list[str]]:
+    """Verified local servers as (name, url, model, program), plus notes on servers found but not trusted."""
     found, notes = [], []
     with httpx.Client(timeout=timeout, trust_env=False, follow_redirects=False) as c:
         for name, url in LOCAL_SERVERS:
@@ -126,20 +165,18 @@ def find_local(timeout: float = 1.0) -> tuple[list[tuple[str, str, str]], list[s
                 continue
             if r.status_code != 200 or not models:
                 continue
-            owner = _port_owner(url) or ""
-            program = _program(owner)
+            program = verified_program(url)
             if program is None:
+                owner = _port_owner(url) or ""
                 notes.append(f"found a server at {url} but could not verify it runs models on this machine "
-                             f"(served by {Path(owner.split()[0]).name if owner else 'an unknown program'}); not used. If you know it is local: "
-                             f"sovereign-router init --trust {name}")
+                             f"(served by {Path(owner.split()[0]).name if owner else 'an unknown program'}); not used. "
+                             f"If you know it is local: sovereign-router init --trust {name}")
                 continue
-            if program == "ollama":
-                local_models = [m for m in models if not _ollama_remote(c, url, m)]
-                if not local_models:
-                    notes.append(f"{name}: every model is hosted remotely; not used")
-                    continue
-                models = local_models
-            found.append((name, url, models[0]))
+            models = _local_models(c, url, models, ollama_api=program == "ollama" or _speaks_ollama(c, url))
+            if not models:
+                notes.append(f"{name}: every model it lists is hosted remotely; not used")
+                continue
+            found.append((name, url, models[0], program))
     return found, notes
 
 
@@ -151,24 +188,34 @@ def auto_config(timeout: float = 1.0, trust: tuple[str, ...] = ()) -> tuple[dict
     """A config dict for parse_config, plus a plain-language summary of what was found. `trust` names servers the
     user explicitly declares local (the only way an unverifiable server is used)."""
     local, notes = find_local(timeout)
+    known = dict(LOCAL_SERVERS)
     for name in trust:
-        url = dict(LOCAL_SERVERS).get(name)
-        if url and not any(n == name for n, _, _ in local):
-            try:
-                with httpx.Client(timeout=timeout, trust_env=False, follow_redirects=False) as c:
-                    model = c.get(f"{url}/models").json()["data"][0]["id"]
-            except Exception:  # noqa: BLE001
-                raise RuntimeError(f"--trust {name}: nothing answering at {url}") from None
-            local.append((name, url, model))
-            notes = [n for n in notes if f"--trust {name}" not in n]
-            notes.append(f"{name}: trusted as local because you said so (--trust)")
+        if name not in known:
+            raise RuntimeError(f"--trust {name}: unknown server name (one of {', '.join(known)})")
+        url = known[name]
+        if any(n == name for n, _, _, _ in local):
+            continue
+        try:
+            with httpx.Client(timeout=timeout, trust_env=False, follow_redirects=False) as c:
+                listed = [m.get("id") for m in c.get(f"{url}/models").json()["data"] if isinstance(m, dict) and m.get("id")]
+                # your word covers the server, not a hosted model it happens to list first
+                models = _local_models(c, url, listed, ollama_api=_speaks_ollama(c, url))
+        except Exception:  # noqa: BLE001
+            raise RuntimeError(f"--trust {name}: nothing answering at {url}") from None
+        if not models:
+            raise RuntimeError(f"--trust {name}: every model it lists is hosted remotely")
+        local.append((name, url, models[0], None))
+        notes = [n for n in notes if f"--trust {name}" not in n]
+        notes.append(f"{name}: trusted as local because you said so (--trust); pinned model {models[0]}")
     if not local:
         raise RuntimeError("no verified local model server found on the usual ports (Ollama 11434, LM Studio 1234, "
                            "llama.cpp 8080, vLLM 8000, Jan 1337)." + ("\n" + "\n".join(notes) if notes else
                            " Start one, or write a config: see example.yaml"))
     targets: dict = {}
-    for name, url, model in local:
+    for name, url, model, program in local:
         targets[name] = {"url": url, "model": model, "location": "local"}
+        if program:  # re-checked at every start: if another program takes the port later, this target is refused
+            targets[name]["verify_program"] = program
         notes.append(f"local: {name} at {url}, model {model}")
     for name, env, url in find_cloud():
         targets[name] = {"url": url, "model": "*", "location": "cloud", "api_key_env": env}

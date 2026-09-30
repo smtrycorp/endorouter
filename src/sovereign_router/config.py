@@ -25,6 +25,7 @@ class Target:
     capabilities: tuple[str, ...] = ("chat",)
     api_key_env: str | None = None  # name of an environment variable holding the key; never the key itself
     timeout_s: float = 120.0
+    verify_program: str | None = None  # set by discovery: the local-inference program that must own this port
 
     @property
     def is_local(self) -> bool:
@@ -115,7 +116,7 @@ def parse_config(raw: dict) -> Config:
     for name, t in traw.items():
         if not isinstance(t, dict):
             raise ConfigError(f"targets.{name}: expected a mapping")
-        _only(t, {"url", "model", "location", "capabilities", "api_key_env", "timeout_s"}, f"targets.{name}")
+        _only(t, {"url", "model", "location", "capabilities", "api_key_env", "timeout_s", "verify_program"}, f"targets.{name}")
         for k in ("url", "model", "location"):
             if not isinstance(t.get(k), str) or not t[k]:
                 raise ConfigError(f"targets.{name}.{k} is required")
@@ -132,6 +133,7 @@ def parse_config(raw: dict) -> Config:
                 capabilities=_strs(t.get("capabilities", ["chat"]), f"targets.{name}.capabilities") or ("chat",),
                 api_key_env=_opt_str(t.get("api_key_env"), f"targets.{name}.api_key_env"),
                 timeout_s=_seconds(t.get("timeout_s"), f"targets.{name}.timeout_s", 120.0),
+                verify_program=_opt_str(t.get("verify_program"), f"targets.{name}.verify_program"),
             )
         )
     if not any(t.is_local for t in targets):

@@ -15,7 +15,7 @@ from sovereign_router.server import create_app
 
 def test_auto_config_finds_local_and_env_keys(monkeypatch, tmp_path):
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path))
-    monkeypatch.setattr(discover, "find_local", lambda timeout=1.0: ([("ollama", "http://127.0.0.1:11434/v1", "qwen3:8b")], []))
+    monkeypatch.setattr(discover, "find_local", lambda timeout=1.0: ([("ollama", "http://127.0.0.1:11434/v1", "qwen3:8b", "ollama")], []))
     for _, env, _ in discover.CLOUD_PROVIDERS:
         monkeypatch.delenv(env, raising=False)
     monkeypatch.setenv("OPENAI_API_KEY", "x")
@@ -23,6 +23,7 @@ def test_auto_config_finds_local_and_env_keys(monkeypatch, tmp_path):
     cfg = parse_config(raw)
     assert cfg.mode == "strict" and cfg.target("ollama").is_local and cfg.target("openai").model == "*"
     assert "**/.env*" in cfg.provenance.private_sources and cfg.provenance.public_sources == ()
+    assert cfg.target("ollama").verify_program == "ollama"
 
 
 def test_no_local_server_is_a_clear_error(monkeypatch):

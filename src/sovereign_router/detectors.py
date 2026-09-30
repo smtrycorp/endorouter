@@ -201,9 +201,9 @@ def _shape_findings(t: str, where: str) -> Iterator[Finding]:
             return
 
 
-# a run of single characters separated by single spaces or hyphens ("A K I A I O S F ..."): a secret typed out letter
-# by letter; bounded and linear
-_SPACED = re.compile(r"(?<![A-Za-z0-9_\-])(?:[A-Za-z0-9_\-] ){7,4096}[A-Za-z0-9_\-](?![A-Za-z0-9_\-])")
+# a run of single characters separated by single spaces ("A K I A I O S F ...", "e y J . ..."): a secret typed out
+# letter by letter, credential punctuation kept; bounded and linear
+_SPACED = re.compile(r"(?<![A-Za-z0-9_.\-])(?:[A-Za-z0-9_.\-] ){7,4096}[A-Za-z0-9_.\-](?![A-Za-z0-9_.\-])")
 # a JSON string literal holding escapes, anywhere in prose ("Tool returned: {\"k\": \"\\u0041KIA...\"}"), decoded
 _JSON_STR = re.compile(r'"(?:[^"\\\n]|\\.){0,8192}"')
 
@@ -307,21 +307,27 @@ _JOIN_RULES = {"private_key", "aws_access_key", "github_token", "openai_key", "a
                "slack_token", "google_api_key", "jwt", "payment_card"}
 
 
+# the API's own structural fields (fixed by the chat completions format), which sit between content in document order
+_STRUCTURAL = (".<key>", ".role", ".id", ".type", ".name", ".tool_call_id")
+
+
 def _joined_texts(body: dict) -> Iterator[tuple[str, str]]:
-    """Message texts joined with nothing between them: all messages, and the user's messages alone, so a key split
-    across messages or content parts ("AKIA" then "IOSFODNN7EXAMPLE") is whole again. Only precise format rules are
-    run on the joins; they cost one more linear pass."""
-    parts, user = [], []
-    for m in body.get("messages") or []:
-        if not isinstance(m, dict):
+    """Every string in the request joined with nothing between them, in document order, plus the user's messages
+    alone: a key split across messages, content parts, tool-call arguments or JSON fields ("AKIA" here,
+    "IOSFODNN7EXAMPLE" there) is whole again. Only precise format rules run on the joins; one more linear pass."""
+    strings: list[str] = []
+    for where, t in _texts(body):
+        if isinstance(t, _Undecodable) or where == "model" or where.endswith(_STRUCTURAL):
             continue
-        c = m.get("content")
-        texts = [c] if isinstance(c, str) else [p.get("text") for p in c if isinstance(p, dict) and isinstance(p.get("text"), str)] if isinstance(c, list) else []
-        parts.extend(texts)
-        if m.get("role") == "user":
-            user.extend(texts)
-    if len(parts) > 1:
-        yield "messages<joined>", "".join(t.strip() for t in parts)
+        strings.append(t.strip())
+        # a JSON document inside a string is also walked by _texts, so its decoded values follow it here
+    if len(strings) > 1:
+        yield "request<joined>", "".join(strings)
+    user = []
+    for m in body.get("messages") or []:
+        if isinstance(m, dict) and m.get("role") == "user":
+            c = m.get("content")
+            user.extend([c] if isinstance(c, str) else [p.get("text") for p in c if isinstance(p, dict) and isinstance(p.get("text"), str)] if isinstance(c, list) else [])
     if len(user) > 1:
         yield "messages<user-joined>", "".join(t.strip() for t in user)
 

@@ -90,7 +90,9 @@ def create_app(cfg: Config, router: Router | None = None) -> Starlette:
 
     async def models(_request: Request):
         data = [{"id": "auto", "object": "model", "owned_by": "sovereign-router"}]
-        data += [{"id": t.name, "object": "model", "owned_by": t.location} for t in cfg.targets]
+        # a pass-through target is requested as "<name>/<model>", so it is listed that way, never as a bare name
+        data += [{"id": f"{t.name}/*" if t.model == "*" else t.name, "object": "model", "owned_by": t.location}
+                 for t in cfg.targets]
         return JSONResponse({"object": "list", "data": data})
 
     async def health(_request: Request):

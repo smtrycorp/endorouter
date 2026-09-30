@@ -84,6 +84,7 @@ A router can only enforce what it is told, so this section matters more than the
 
 - **Localhost is not proof of local inference.** Some local servers can proxy requests to a hosted model. Discovery trusts only known local-inference programs, and it checks Ollama models for remote hosting. A target you declare `local` yourself, in a config file or with `--trust`, is taken at your word. `sovereign-router doctor` reminds you of this for every local target.
 - **Provenance is only as good as the client that sends it.** Configure `trusted_clients` narrowly. The router ignores `X-Forwarded-For`, so no caller can borrow a trusted address. Behind a reverse proxy, the proxy is the peer, so list it in `trusted_clients` only if every caller behind it is trusted.
+- **A static public label moves the decision to the model picker.** Many clients can only send fixed headers. If you set `x-sovereign-label: public` on every request, every request counts as public, and only the detectors stand between a pasted secret and the cloud model you chose. Label per request where you can, or route by source paths with `public_sources`.
 - **Detectors catch formats, not meaning.** That is why the default is local. In balanced mode, unlabelled work can reach the cloud if the local classifier calls it public, and that is a judgement call you opt into.
 
 ## leakbench

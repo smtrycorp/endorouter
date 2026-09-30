@@ -44,9 +44,13 @@ def cmd_doctor(a) -> int:
         if t.api_key_env and not os.environ.get(t.api_key_env):
             notes.append(f"{t.api_key_env} is not set")
             ok = ok and t.is_local
-        print(f"  [{t.location:5}] {t.name}: {t.url} model={t.model}")
+        print(f"  [{t.location:5}] {t.name}: {t.url} model={t.model}"
+              + (f" (verified: {t.verify_program})" if t.verify_program else ""))
         for n in notes:
             print(f"          note: {n}")
+    for problem in _reverify(cfg):
+        print(f"  problem: {problem}")
+        ok = False
     try:
         with open(cfg.audit_log, "a"):
             pass
@@ -85,6 +89,19 @@ def _auto(trust: tuple[str, ...] = ()):
     return raw, notes, parse_config(raw)
 
 
+def _reverify(cfg) -> list[str]:
+    """Targets discovery verified must still be served by the same program: if the port changed hands (the local
+    server quit and a proxy started there), that target is not used. Returns one problem per failed target."""
+    from .discover import verified_program
+
+    problems = []
+    for t in cfg.targets:
+        if t.is_local and t.verify_program and verified_program(t.url) != t.verify_program:
+            problems.append(f"{t.name}: {t.url} is no longer served by {t.verify_program}; refusing to use it "
+                            f"(run `sovereign-router init --force` to re-detect)")
+    return problems
+
+
 def cmd_init(a) -> int:
     import yaml
 
@@ -112,6 +129,9 @@ def cmd_serve(a) -> int:
         print(f"strict mode, audit log {cfg.audit_log}; serving on http://{a.host}:{a.port}/v1")
     else:
         cfg = load_config(a.config) if Path(a.config).exists() else _cfg(a.config)
+    problems = _reverify(cfg)
+    if problems:
+        sys.exit("\n".join(problems))
     # proxy headers off: X-Forwarded-For must never let a caller borrow a trusted client's address. Behind a reverse
     # proxy the proxy itself is the peer; list it in trusted_clients only if every caller behind it is trusted.
     uvicorn.run(create_app(cfg), host=a.host, port=a.port, log_level="warning", proxy_headers=False,
