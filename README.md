@@ -38,7 +38,7 @@ Every request gets one label: `public`, `unknown` or `private`. Labels only ever
 | No provenance | `unknown`, which stays local in strict mode |
 | A source matching `public_sources`, sent by a trusted client | may become `public` |
 | A source matching `private_sources` | `private` |
-| A path that climbs out of its root after normalising, such as `docs/public/../x` | `unknown`, never public |
+| Any path | normalised first, so `docs/public/../x` is matched as `x`; a path that climbs above its root, such as `../x`, is `unknown` |
 | A structural detector finding anywhere in the request | `private` |
 | The optional local classifier | can tighten; in balanced mode it may also clear `unknown`, and the audit log says so |
 
