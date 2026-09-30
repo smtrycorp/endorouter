@@ -68,6 +68,10 @@ def _only(d: dict, allowed: set[str], where: str) -> None:
         raise ConfigError(f"{where}: unknown field(s) {sorted(extra)}; allowed: {sorted(allowed)}")
 
 
+def _missing(where: str):
+    raise ConfigError(f"{where} must be a non-empty string")
+
+
 def _bool(v: Any, where: str, default: bool) -> bool:
     if v is None:
         return default
@@ -150,7 +154,7 @@ def parse_config(raw: dict) -> Config:
     clf = Classifier(enabled=_bool(craw.get("enabled"), "classifier.enabled", False),
                      target=_opt_str(craw.get("target"), "classifier.target"),
                      timeout_s=_seconds(craw.get("timeout_s"), "classifier.timeout_s", 30.0))
-    cfg = Config(targets=tuple(targets), mode=mode, audit_log=str(raw.get("audit_log", "sovereign-router.log.jsonl")), provenance=prov, classifier=clf)
+    cfg = Config(targets=tuple(targets), mode=mode, audit_log=_opt_str(raw.get("audit_log", "sovereign-router.log.jsonl"), "audit_log") or _missing("audit_log"), provenance=prov, classifier=clf)
     if clf.enabled:
         ct = cfg.target(clf.target or "")
         if ct is None or not ct.is_local:
@@ -160,10 +164,25 @@ def parse_config(raw: dict) -> Config:
     return cfg
 
 
+class _StrictLoader(yaml.SafeLoader):
+    """SafeLoader that refuses a key written twice: YAML would silently keep the last one."""
+
+
+def _no_duplicates(loader, node, deep=False):
+    keys = [loader.construct_object(k, deep=deep) for k, _ in node.value]
+    dup = next((k for k in keys if keys.count(k) > 1), None)
+    if dup is not None:
+        raise ConfigError(f"'{dup}' is written twice in the config")
+    return loader.construct_mapping(node, deep)
+
+
+_StrictLoader.add_constructor(yaml.resolver.BaseResolver.DEFAULT_MAPPING_TAG, _no_duplicates)
+
+
 def load_config(path: str | Path) -> Config:
     p = Path(path)
     try:
-        raw = yaml.safe_load(p.read_text())
+        raw = yaml.load(p.read_text(), Loader=_StrictLoader)  # noqa: S506 (a SafeLoader subclass)
     except OSError as e:
         raise ConfigError(f"cannot read {p}: {e}") from e
     return parse_config(raw)

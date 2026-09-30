@@ -137,6 +137,9 @@ def _ollama_remote(c: httpx.Client, url: str, model: str) -> bool:
         return True
     if r.status_code != 200 or not isinstance(info, dict):
         return True
+    caps = info.get("capabilities")
+    if isinstance(caps, list) and "completion" not in caps:
+        return True  # an embedding-only model cannot serve chat: not usable, so treated like one we will not pick
     return bool(info.get("remote_host") or info.get("remote_model"))
 
 
@@ -167,10 +170,11 @@ def find_local(timeout: float = 1.0) -> tuple[list[tuple[str, str, str, str | No
                 continue
             program = verified_program(url)
             if program is None:
-                owner = _port_owner(url) or ""
-                notes.append(f"found a server at {url} but could not verify it runs models on this machine "
-                             f"(served by {Path(owner.split()[0]).name if owner else 'an unknown program'}); not used. "
-                             f"If you know it is local: sovereign-router init --trust {name}")
+                owners = _port_owners(url) or []
+                shown = "; ".join(o[:160] for o in owners) or "a program this user cannot see"
+                notes.append(f"found a server at {url} but could not verify it runs models on this machine. It is "
+                             f"served by: {shown}. Not used. Only if that program runs models here, trust it with "
+                             f"`sovereign-router init --trust {name}=<model>` naming the local model to use")
                 continue
             models = _local_models(c, url, models, ollama_api=program == "ollama" or _speaks_ollama(c, url))
             if not models:
@@ -189,7 +193,8 @@ def auto_config(timeout: float = 1.0, trust: tuple[str, ...] = ()) -> tuple[dict
     user explicitly declares local (the only way an unverifiable server is used)."""
     local, notes = find_local(timeout)
     known = dict(LOCAL_SERVERS)
-    for name in trust:
+    for spec in trust:
+        name, _, pinned = spec.partition("=")
         if name not in known:
             raise RuntimeError(f"--trust {name}: unknown server name (one of {', '.join(known)})")
         url = known[name]
@@ -198,15 +203,26 @@ def auto_config(timeout: float = 1.0, trust: tuple[str, ...] = ()) -> tuple[dict
         try:
             with httpx.Client(timeout=timeout, trust_env=False, follow_redirects=False) as c:
                 listed = [m.get("id") for m in c.get(f"{url}/models").json()["data"] if isinstance(m, dict) and m.get("id")]
-                # your word covers the server, not a hosted model it happens to list first
-                models = _local_models(c, url, listed, ollama_api=_speaks_ollama(c, url))
+                ollama_api = _speaks_ollama(c, url)
+                usable = _local_models(c, url, listed, ollama_api=ollama_api)
         except Exception:  # noqa: BLE001
             raise RuntimeError(f"--trust {name}: nothing answering at {url}") from None
-        if not models:
-            raise RuntimeError(f"--trust {name}: every model it lists is hosted remotely")
-        local.append((name, url, models[0], None))
+        if pinned:
+            # your word covers this model on this server; a model named 'cloud', or one Ollama reports as hosted, is refused
+            if pinned not in listed:
+                raise RuntimeError(f"--trust {name}={pinned}: the server does not list that model")
+            if pinned not in usable:
+                raise RuntimeError(f"--trust {name}={pinned}: that model is hosted remotely")
+            model = pinned
+        elif ollama_api and usable:
+            model = usable[0]  # an Ollama API reports which of its models are hosted, so the first local one is safe
+        else:
+            raise RuntimeError(f"--trust {name}: name the local model to use, e.g. --trust {name}=<model>. "
+                               f"This server lists: {', '.join(listed[:8])}. A gateway can list hosted models too, "
+                               f"so the router will not pick one for you")
+        local.append((name, url, model, None))
         notes = [n for n in notes if f"--trust {name}" not in n]
-        notes.append(f"{name}: trusted as local because you said so (--trust); pinned model {models[0]}")
+        notes.append(f"{name}: trusted as local because you said so (--trust); model {model}")
     if not local:
         raise RuntimeError("no verified local model server found on the usual ports (Ollama 11434, LM Studio 1234, "
                            "llama.cpp 8080, vLLM 8000, Jan 1337)." + ("\n" + "\n".join(notes) if notes else

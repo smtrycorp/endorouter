@@ -276,3 +276,104 @@ def test_models_list_shows_pass_through_targets_with_their_request_form(tmp_path
     cfg = _passthrough(tmp_path)
     ids = [m["id"] for m in TestClient(create_app(cfg)).get("/v1/models").json()["data"]]
     assert "openai/*" in ids and "openai" not in ids
+
+
+# QC round 6
+@pytest.mark.parametrize("text", [
+    "creds: " + __import__("base64").b64encode(b"NIMBUS_KEY=nmb_sk_R7tY3wB6zq4f9KxP2mQ8vL1n").decode(),
+    'Tool returned: {"k": "\\u0054x9pL2mQ8vK4nR7wZ3yB6cD1"}',
+    " ".join("Tx9pL2mQ8vK4nR7wZ3yB6cD1"),
+])
+def test_decoded_text_gets_the_shape_rule_too(text):
+    assert "secret_shape" in {f.rule for f in scan_text(text, "x")}
+
+
+@pytest.mark.parametrize("msgs", [
+    [{"role": "assistant", "content": None, "tool_calls": [{"id": "1", "type": "function", "function": {"name": "AKIA", "arguments": "IOSFODNN7EXAMPLE"}}]}],
+    [{"role": "user", "content": "AKIA"}, {"role": "user", "content": "IOSFODNN7EXAMPLE"}, {"role": "user", "content": "is this valid?"}],
+    [{"role": "system", "content": "You are a helpful assistant"}, {"role": "user", "content": "AKIA"},
+     {"role": "assistant", "content": None, "tool_calls": [{"id": "x", "type": "function", "function": {"name": "f", "arguments": "IOSFODNN7EXAMPLE"}}]},
+     {"role": "tool", "tool_call_id": "x", "content": "ok"}],
+])
+def test_split_keys_are_found_whatever_sits_at_the_seams(msgs):
+    assert "aws_access_key" in {f.rule for f in scan_request({"messages": msgs})}
+
+
+def test_escaped_json_string_longer_than_8k_is_decoded():
+    text = 'log: "' + "a " * 4500 + '\\u0041KIAIOSFODNN7EXAMPLE"'
+    assert "aws_access_key" in {f.rule for f in scan_text(text, "x")}
+
+
+@pytest.mark.parametrize("text", ["4242424242424242 12/28", "4242-4242-4242-4242 12/28", "4242424242424242 123"])
+def test_card_followed_by_other_digits_is_found(text):
+    assert "payment_card" in {f.rule for f in scan_text(text, "x")}
+
+
+def test_trust_on_a_non_ollama_server_requires_naming_the_model(monkeypatch):
+    class Resp:
+        def __init__(self, data, code=200):
+            self._d, self.status_code = data, code
+
+        def json(self):
+            return self._d
+
+    class C:
+        def __init__(self, *a, **k): pass
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+
+        def get(self, url):
+            if url.endswith("/api/version"):
+                return Resp({}, 404)
+            return Resp({"data": [{"id": "gpt-4o"}, {"id": "claude-sonnet-4"}]})
+
+    monkeypatch.setattr(discover.httpx, "Client", C)
+    monkeypatch.setattr(discover, "find_local", lambda timeout=1.0: ([], []))
+    with pytest.raises(RuntimeError, match="name the local model"):
+        discover.auto_config(trust=("vllm",))
+    with pytest.raises(RuntimeError, match="does not list"):
+        discover.auto_config(trust=("vllm=qwen3-8b",))
+    raw, _ = discover.auto_config(trust=("vllm=gpt-4o",))  # the user's explicit word, for a model they named
+    assert raw["targets"]["vllm"]["model"] == "gpt-4o"
+
+
+def test_ollama_embedding_only_models_are_not_picked():
+    class C:
+        def post(self, *a, **k):
+            class R:
+                status_code = 200
+
+                def json(self): return {"capabilities": ["embedding"]}
+            return R()
+
+    assert discover._ollama_remote(C(), "http://127.0.0.1:11434/v1", "nomic-embed-text")
+
+
+def test_a_verified_target_whose_port_changes_hands_while_running_is_disabled(monkeypatch, tmp_path):
+    cfg = parse_config({"version": 1, "audit_log": str(tmp_path / "a.jsonl"), "targets": {
+        "ollama": {"url": "http://local.test:11434/v1", "model": "m", "location": "local", "verify_program": "ollama"}}})
+
+    def up(req):
+        raise httpx.ConnectError("gone", request=req)
+
+    monkeypatch.setattr(discover, "_port_owners", lambda url: ["/usr/bin/python3 proxy.py"])
+    router = Router(cfg, client=httpx.AsyncClient(transport=httpx.MockTransport(up), trust_env=False))
+    body = {"model": "auto", "messages": [{"role": "user", "content": "hi"}]}
+    for _ in range(2):
+        with pytest.raises(Exception):
+            asyncio.run(router.route(body))
+    events = [json.loads(x)["event"] for x in open(cfg.audit_log)]
+    assert "target_disabled" in events and router._disabled == {"ollama"}
+
+
+def test_duplicate_config_keys_and_null_audit_log_are_errors(tmp_path):
+    from sovereign_router import ConfigError
+    from sovereign_router.config import load_config
+
+    f = tmp_path / "c.yaml"
+    f.write_text("version: 1\nmode: strict\nmode: balanced\ntargets:\n  l: {url: 'http://127.0.0.1/v1', model: m, location: local}\n")
+    with pytest.raises(ConfigError, match="twice"):
+        load_config(f)
+    f.write_text("version: 1\naudit_log: null\ntargets:\n  l: {url: 'http://127.0.0.1/v1', model: m, location: local}\n")
+    with pytest.raises(ConfigError, match="audit_log"):
+        load_config(f)

@@ -104,6 +104,23 @@ def _card(d: str) -> bool:
     )
 
 
+def _card_in_groups(m: str) -> bool:
+    """Any run of whole digit groups 13 to 19 digits long that is a valid card: '4242424242424242 12/28' holds a card
+    even though all 18 digits together do not."""
+    groups = [g for g in re.split(r"[ -]", m) if g]
+    if len(groups) == 1:
+        d = groups[0]
+        return any(_card(d[i:i + n]) for n in range(13, 20) for i in (0, len(d) - n) if 0 <= i and i + n <= len(d))
+    for i in range(len(groups)):
+        for j in range(i + 1, len(groups) + 1):
+            d = "".join(groups[i:j])
+            if len(d) > 19:
+                break
+            if len(d) >= 13 and _card(d):
+                return True
+    return False
+
+
 def _jwt(token: str) -> bool:
     parts = token.split(".")
     if len(parts) != 3:
@@ -135,7 +152,7 @@ _RULES: list[tuple[str, re.Pattern, object]] = [
     ("private_key_boundary", re.compile(r"-----END (?:[A-Z0-9 ]{1,64} )?PRIVATE KEY-----"), None),
     ("jwt", re.compile(r"\beyJ[A-Za-z0-9_\-]{8,4096}\.[A-Za-z0-9_\-]{8,8192}\.[A-Za-z0-9_\-]{8,4096}\b"), _jwt),
     ("credential_url", re.compile(r"\b[a-z][a-z0-9+.\-]{1,15}://[^\s:/@]{1,256}:[^\s@/]{1,256}@[^\s/]{1,256}", re.IGNORECASE), None),
-    ("payment_card", re.compile(r"\b(?:\d[ -]?){13,19}\b"), lambda m: _card(re.sub(r"\D", "", m))),
+    ("payment_card", re.compile(r"\b(?:\d[ -]?){13,40}\b"), lambda m: _card_in_groups(m)),
     ("us_ssn", re.compile(r"\b(?!000|666|9\d\d)\d{3}-(?!00)\d{2}-(?!0000)\d{4}\b"), None),
     ("email_address", re.compile(r"\b[A-Za-z0-9._%+\-]{1,64}@[A-Za-z0-9.\-]{1,253}\.[A-Za-z]{2,24}\b"), None),
     # not inside a hyphen-joined token (e.g. the digit runs of a Slack token), where a phone number never sits
@@ -205,7 +222,17 @@ def _shape_findings(t: str, where: str) -> Iterator[Finding]:
 # letter by letter, credential punctuation kept; bounded and linear
 _SPACED = re.compile(r"(?<![A-Za-z0-9_.\-])(?:[A-Za-z0-9_.\-] ){7,4096}[A-Za-z0-9_.\-](?![A-Za-z0-9_.\-])")
 # a JSON string literal holding escapes, anywhere in prose ("Tool returned: {\"k\": \"\\u0041KIA...\"}"), decoded
-_JSON_STR = re.compile(r'"(?:[^"\\\n]|\\.){0,8192}"')
+_JSON_STR = re.compile(r'"(?:[^"\\\n]|\\.)*"')  # disjoint alternatives: linear, no length cap to slip past
+
+
+def _decoded_findings(t: str, where: str) -> Iterator[Finding]:
+    """Decoded text (base64, JSON escapes, spaced-out letters) gets the format rules AND the shape rule, one level deep."""
+    found = False
+    for f in _scan_normalised(t, where):
+        found = True
+        yield f
+    if not found:
+        yield from _shape_findings(t, where)
 
 
 def scan_text(text: str, where: str) -> Iterator[Finding]:
@@ -226,17 +253,17 @@ def scan_text(text: str, where: str) -> Iterator[Finding]:
                 decoded = json.loads(m.group(0))
             except ValueError:
                 continue
-            for f in _scan_normalised(normalise(decoded), f"{where}<json-string>"):
+            for f in _decoded_findings(normalise(decoded), f"{where}<json-string>"):
                 if f.rule not in seen:
                     seen.add(f.rule)
                     yield f
     for m in _SPACED.finditer(t):
-        for f in _scan_normalised(m.group(0).replace(" ", ""), f"{where}<spaced>"):
+        for f in _decoded_findings(m.group(0).replace(" ", ""), f"{where}<spaced>"):
             if f.rule not in seen:
                 seen.add(f.rule)
                 yield f
     for decoded in _decoded_base64(t):
-        for f in _scan_normalised(normalise(decoded), f"{where}<base64>"):
+        for f in _decoded_findings(normalise(decoded), f"{where}<base64>"):
             if f.rule not in seen:
                 seen.add(f.rule)
                 yield f
@@ -303,40 +330,46 @@ def _texts(body: dict) -> Iterator[tuple[str, str]]:
         yield from _walk(v, k)  # includes "model": a pass-through target forwards the client's model name upstream
 
 
-_JOIN_RULES = {"private_key", "aws_access_key", "github_token", "openai_key", "anthropic_key", "stripe_key",
-               "slack_token", "google_api_key", "jwt", "payment_card"}
-
-
-# the API's own structural fields (fixed by the chat completions format), which sit between content in document order
+# Key formats for joined text, without word boundaries: at a join seam a key half sits against its neighbour
+# ("assistantAKIA", "EXAMPLEok"), so \b cannot be required there. Cards are left out: digits from unrelated fields
+# would join into false cards.
+_JOIN_RULES = [
+    ("aws_access_key", re.compile(r"(?:AKIA|ASIA)[0-9A-Z]{16}")),
+    ("github_token", re.compile(r"gh[pousr]_[A-Za-z0-9]{36}|github_pat_[A-Za-z0-9_]{60}")),
+    ("anthropic_key", re.compile(r"sk-ant-[A-Za-z0-9_\-]{20}")),
+    ("openai_key", re.compile(r"sk-(?:proj|svcacct|admin)-[A-Za-z0-9_\-]{20}")),
+    ("stripe_key", re.compile(r"(?:sk|rk)_live_[A-Za-z0-9]{16}")),
+    ("slack_token", re.compile(r"xox[abposr]-\d{6,}-[A-Za-z0-9-]{6}")),
+    ("google_api_key", re.compile(r"AIza[0-9A-Za-z_\-]{35}")),
+    ("private_key", re.compile(r"-----BEGIN (?:[A-Z0-9 ]{1,64} )?PRIVATE KEY-----")),
+]
+# the API's own structural fields, which sit between content in document order
 _STRUCTURAL = (".<key>", ".role", ".id", ".type", ".name", ".tool_call_id")
 
 
 def _joined_texts(body: dict) -> Iterator[tuple[str, str]]:
-    """Every string in the request joined with nothing between them, in document order, plus the user's messages
-    alone: a key split across messages, content parts, tool-call arguments or JSON fields ("AKIA" here,
-    "IOSFODNN7EXAMPLE" there) is whole again. Only precise format rules run on the joins; one more linear pass."""
-    strings: list[str] = []
+    """Two joins with nothing between strings, in document order: the content strings alone (structural fields
+    skipped), and every string (so a key split across a tool's name and its arguments is whole). One more linear
+    pass each."""
+    content: list[str] = []
+    everything: list[str] = []
     for where, t in _texts(body):
-        if isinstance(t, _Undecodable) or where == "model" or where.endswith(_STRUCTURAL):
+        if isinstance(t, _Undecodable) or where.endswith(".<key>"):
             continue
-        strings.append(t.strip())
-        # a JSON document inside a string is also walked by _texts, so its decoded values follow it here
-    if len(strings) > 1:
-        yield "request<joined>", "".join(strings)
-    user = []
-    for m in body.get("messages") or []:
-        if isinstance(m, dict) and m.get("role") == "user":
-            c = m.get("content")
-            user.extend([c] if isinstance(c, str) else [p.get("text") for p in c if isinstance(p, dict) and isinstance(p.get("text"), str)] if isinstance(c, list) else [])
-    if len(user) > 1:
-        yield "messages<user-joined>", "".join(t.strip() for t in user)
+        everything.append(t.strip())
+        if where != "model" and not where.endswith(_STRUCTURAL):
+            content.append(t.strip())
+    if len(content) > 1:
+        yield "request<joined>", "".join(content)
+    if len(everything) > 1:
+        yield "request<joined-all>", "".join(everything)
 
 
 def scan_request(body: dict, extra: Iterable[tuple[str, str]] = ()) -> list[Finding]:
     found: list[Finding] = []
     for where, text in _joined_texts(body):
         t = normalise(text)
-        found.extend(f for f in _scan_normalised(t, where) if f.rule in _JOIN_RULES)
+        found.extend(Finding(rule, where) for rule, pat in _JOIN_RULES if pat.search(t))
     for where, text in list(_texts(body)) + list(extra):
         if isinstance(text, _Undecodable):
             found.append(Finding("undecodable_nested_json", where))

@@ -63,6 +63,9 @@ class Router:
             raise ValueError("an injected httpx client must be created with trust_env=False")
         self.cfg = cfg
         self.client = client or make_client()
+        # targets discovery verified are re-checked on the first connection error; a port that changed hands is
+        # never used again by this process
+        self._disabled: set[str] = set()
         self.audit = audit or AuditLog(cfg.audit_log)
 
     async def plan(
@@ -116,6 +119,9 @@ class Router:
         attempts: list[dict] = []
         stream = bool(body.get("stream"))
         for target in permitted_targets(self.cfg, decision):
+            if target.name in self._disabled:
+                attempts.append({"target": target.name, "error": "port_changed_hands"})
+                continue
             t0 = time.monotonic()
             requested = str(body.get("model") or "")
             model = requested.split("/", 1)[1] if target.model == "*" and "/" in requested else target.model
@@ -137,6 +143,13 @@ class Router:
                 resp = await self.client.send(req, stream=stream, follow_redirects=False)
             except httpx.HTTPError as e:
                 attempts.append({"target": target.name, "error": type(e).__name__, "ms": int((time.monotonic() - t0) * 1000)})
+                if target.verify_program and isinstance(e, httpx.TransportError):
+                    from .discover import verified_program
+
+                    if verified_program(target.url) != target.verify_program:
+                        self._disabled.add(target.name)
+                        self.audit.write({"event": "target_disabled", "request_id": request_id, "target": target.name,
+                                          "reason": "port no longer served by the verified program"})
                 continue
             if resp.status_code in RETRYABLE or 300 <= resp.status_code < 400:
                 attempts.append({"target": target.name, "status": resp.status_code, "ms": int((time.monotonic() - t0) * 1000)})
