@@ -7,3 +7,4 @@ build/
 dist/
 bench/.litellm-venv/
 bench/litellm.log
+bench/*.log

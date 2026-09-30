@@ -1,0 +1,13 @@
+# Balanced mode: unlabelled work may reach the cloud when no detector fires AND a local model classifies it PUBLIC.
+# The classifier is a local model (a 30B open-weight model, 4-bit, on this machine) behind bench/local_shim.py on port 8801.
+version: 1
+mode: balanced
+audit_log: bench/leakbench-balanced.log.jsonl
+targets:
+  cloud: {url: "http://127.0.0.1:8799/v1", model: fake-cloud, location: cloud}
+  local: {url: "http://127.0.0.1:8800/v1", model: fake-local, location: local}
+  classifier: {url: "http://127.0.0.1:8801/v1", model: local-classifier, location: local, timeout_s: 300}
+provenance:
+  public_sources: ["docs/public/**"]
+  private_sources: ["**/.env*", ".env*", "clients/**"]
+classifier: {enabled: true, target: classifier, timeout_s: 300}
