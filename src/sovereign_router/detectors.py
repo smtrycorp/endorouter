@@ -213,9 +213,37 @@ def _secret_shaped(tok: str, before: str) -> bool:
     return len(set(kinds)) >= 2 and switch >= 0.3 and entropy >= 0.75 * math.log2(min(n, 62))
 
 
+# a value assigned to an UPPER_SNAKE name (NAME=value, NAME: value): generated passwords and Django-style keys carry
+# punctuation that splits them into short tokens, so the whole value is scored, punctuation as its own class
+_CRED_VALUE = re.compile(r"(?:^|[\s;])(?:export\s+)?[A-Z][A-Z0-9_]{2,63}\s*[=:]\s*(['\"]?)([^\s'\"]{16,256})\1(?=\s|$|[;,])")
+
+
+_CODE_EXPR = re.compile(r"[A-Za-z_][\w.]*(?:\(.*\))?,?")  # an identifier, attribute or call: code, not a secret
+_SECRET_PUNCT = set("!@#$%^&*+=~?<>|{}[]")
+
+
+def _punct_secret(v: str) -> bool:
+    if "://" in v or sum(len(r) for r in re.findall(r"[a-z]{4,}", v)) / len(v) > 0.35:
+        return False  # URLs are the credential_url rule's; word-like values are settings, not secrets
+    if _CODE_EXPR.fullmatch(v) or sum(c in _SECRET_PUNCT for c in v) < 2:
+        return False
+    kinds = {("d" if c.isdigit() else "u" if c.isupper() else "l" if c.islower() else "p") for c in v}
+    if "p" not in kinds or len(kinds) < 3:
+        return False
+    counts: dict[str, int] = {}
+    for c in v:
+        counts[c] = counts.get(c, 0) + 1
+    entropy = -sum(n / len(v) * math.log2(n / len(v)) for n in counts.values())
+    return entropy >= 0.8 * math.log2(min(len(v), 94))
+
+
 def _shape_findings(t: str, where: str) -> Iterator[Finding]:
     for m in _SHAPE_TOKEN.finditer(t):
         if _secret_shaped(m.group(0), t[max(0, m.start() - 80):m.start()]):
+            yield Finding("secret_shape", where)
+            return
+    for m in _CRED_VALUE.finditer(t):
+        if _punct_secret(m.group(2)):
             yield Finding("secret_shape", where)
             return
 
@@ -225,6 +253,18 @@ def _shape_findings(t: str, where: str) -> Iterator[Finding]:
 _SPACED = re.compile(r"(?<![A-Za-z0-9_.\-])(?:[A-Za-z0-9_.\-] ){7,4096}[A-Za-z0-9_.\-](?![A-Za-z0-9_.\-])")
 # a JSON string literal holding escapes, anywhere in prose ("Tool returned: {\"k\": \"\\u0041KIA...\"}"), decoded
 _JSON_STR = re.compile(r'"(?:[^"\\\n]|\\.)*"')  # disjoint alternatives: linear, no length cap to slip past
+
+
+
+def _json_literals(t: str) -> Iterator[str]:
+    """String literals paired both ways: from the start of each line, and from just after its first quote. A stray
+    '"' earlier on the line shifts the pairing by one; the second pass has the other parity. Two linear passes."""
+    for line in t.split("\n"):
+        if '"' not in line or "\\" not in line:
+            continue
+        yield from (m.group(0) for m in _JSON_STR.finditer(line))
+        first = line.find('"')
+        yield from (m.group(0) for m in _JSON_STR.finditer(line, first + 1))
 
 
 def _decoded_findings(t: str, where: str) -> Iterator[Finding]:
@@ -248,11 +288,11 @@ def scan_text(text: str, where: str) -> Iterator[Finding]:
             seen.add(f.rule)
             yield f
     if "\\" in t:
-        for m in _JSON_STR.finditer(t):
-            if "\\" not in m.group(0):
+        for lit in _json_literals(t):
+            if "\\" not in lit:
                 continue
             try:
-                decoded = json.loads(m.group(0))
+                decoded = json.loads(lit)
             except ValueError:
                 continue
             for f in _decoded_findings(normalise(decoded), f"{where}<json-string>"):
@@ -355,10 +395,12 @@ def _joined_texts(body: dict) -> Iterator[tuple[str, str]]:
     carried inside strings (a key half in a JSON key, the other in its value). One more linear pass each."""
     content: list[str] = []
     everything: list[str] = []
+    with_keys: list[str] = []
     decoded_json: list[str] = []
     for where, t in _texts(body):
         if isinstance(t, _Undecodable):
             continue
+        with_keys.append(t.strip())  # keys and values everywhere: {"parameters": {"AKIA": "IOSFODNN7EXAMPLE"}}
         if "<json>" in where:
             decoded_json.append(t.strip())  # keys and values of JSON inside strings: {"AKIA": "IOSFODNN7EXAMPLE"}
         if where.endswith(".<key>"):
@@ -366,7 +408,8 @@ def _joined_texts(body: dict) -> Iterator[tuple[str, str]]:
         everything.append(t.strip())
         if where != "model" and not where.endswith(_STRUCTURAL):
             content.append(t.strip())
-    for label, parts in (("request<joined>", content), ("request<joined-all>", everything), ("json<joined>", decoded_json)):
+    for label, parts in (("request<joined>", content), ("request<joined-all>", everything),
+                         ("request<joined-keys>", with_keys), ("json<joined>", decoded_json)):
         if len(parts) > 1:
             yield label, "".join(parts)
 

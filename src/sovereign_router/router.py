@@ -80,9 +80,12 @@ class Router:
         findings = scan_request(body, extra=[(f"sources[{i}]", s) for i, s in enumerate(sources)])
         verdict = None
         if self.cfg.classifier.enabled:
-            # the classifier is local, but it still receives prompt text: that send is audited first like any other
-            self.audit.write({"event": "classifier_dispatch", "request_id": request_id, "target": self.cfg.classifier.target})
-            verdict = await classify(self.cfg, body, self.client)
+            ct = self.cfg.target(self.cfg.classifier.target or "")
+            # the classifier receives the prompt text too: its port is re-verified like any other send, and an
+            # unverified port means no verdict (which never grants anything)
+            if ct is not None and (not ct.verify_program or self._still_verified(ct, request_id or "")):
+                self.audit.write({"event": "classifier_dispatch", "request_id": request_id, "target": ct.name})
+                verdict = await classify(self.cfg, body, self.client)
         d = decide(
             self.cfg,
             requested_model=body.get("model"),

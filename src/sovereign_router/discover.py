@@ -61,6 +61,12 @@ def _program(cmdline: str) -> str | None:
     exe_path, sep, rest = cmdline.partition("\0")
     if sep:
         cmdline = rest
+        # the executable (ps comm) decides when it is known: a node process titled "ollama serve" is node
+        exe_name = Path(exe_path).name.lower()
+        if exe_name in LOCAL_INFERENCE_PROGRAMS:
+            return exe_name
+        if not exe_name.startswith("python") and ".app/" not in exe_path:
+            return None
     else:
         m = re.match(r"^(/(?:[^/]+/)*?[^/]+\.app/Contents/MacOS/[^/]+?)(?:\s+-|$)", cmdline)
         exe_path = m.group(1) if m else ""
@@ -183,7 +189,9 @@ def find_local(timeout: float = 1.0) -> tuple[list[tuple[str, str, str, str | No
             program = verified_program(url)
             if program is None:
                 owners = _port_owners(url) or []
-                shown = "; ".join(o.split("\0")[-1][:160] for o in owners) or "a program this user cannot see"
+                shown = "; ".join(o.split("\0")[-1][:160] for o in owners) or (
+                    "a program this user cannot see (on Linux, a service running as another user, such as the ollama "
+                    "service, is invisible to this check)")
                 notes.append(f"found a server at {url} but could not verify it runs models on this machine. It is "
                              f"served by: {shown}. Not used. Only if that program runs models here, trust it with "
                              f"`sovereign-router init --trust {name}=<model>` naming the local model to use")

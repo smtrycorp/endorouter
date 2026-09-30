@@ -407,3 +407,49 @@ def test_duplicate_config_keys_and_null_audit_log_are_errors(tmp_path):
     f.write_text("version: 1\naudit_log: null\ntargets:\n  l: {url: 'http://127.0.0.1/v1', model: m, location: local}\n")
     with pytest.raises(ConfigError, match="audit_log"):
         load_config(f)
+
+
+# QC round 8
+def test_classifier_send_is_skipped_when_its_verified_port_changed_hands(monkeypatch, tmp_path):
+    cfg = parse_config({"version": 1, "mode": "balanced", "audit_log": str(tmp_path / "a.jsonl"), "targets": {
+        "ollama": {"url": "http://local.test:11434/v1", "model": "m", "location": "local", "verify_program": "ollama"},
+        "cloud": {"url": "https://cloud.test/v1", "model": "c", "location": "cloud"}},
+        "classifier": {"enabled": True, "target": "ollama"}})
+    posts = []
+
+    def up(req):
+        posts.append(req.url.host)
+        return httpx.Response(200, json={"choices": [{"message": {"content": "PUBLIC"}}]})
+
+    monkeypatch.setattr(discover, "_port_owners", lambda url: ["/usr/bin/python3 wrapper.py"])
+    router = Router(cfg, client=httpx.AsyncClient(transport=httpx.MockTransport(up), trust_env=False))
+    with pytest.raises(Exception):
+        asyncio.run(router.route({"model": "auto", "messages": [{"role": "user", "content": "our Q3 plan"}]}))
+    assert posts == []  # neither the classifier nor any target received the text
+
+
+def test_key_split_between_a_native_dict_key_and_value_is_found():
+    body = {"messages": [{"role": "user", "content": "hi"}], "tools": [{"type": "function", "function": {
+        "name": "f", "description": "d", "parameters": {"AKIA": "IOSFODNN7EXAMPLE"}}}]}
+    assert "aws_access_key" in {f.rule for f in scan_request(body)}
+
+
+def test_stray_quote_before_escaped_json_does_not_hide_it():
+    assert "aws_access_key" in {f.rule for f in scan_text('pipe is 3" wide; tool returned {"k":"\\u0041KIAIOSFODNN7EXAMPLE"}', "x")}
+
+
+@pytest.mark.parametrize("text", ["SECRET_KEY = 'n8!d#q2x$v7@k^m4&z*r(p9)w1%t6b3j5-h0=c+y_s8f!g2#l4'",
+                                  "DB_PASSWORD=Xk9!pQ2#vL7$mR4&"])
+def test_punctuated_secrets_where_credentials_are_placed(text):
+    assert "secret_shape" in {f.rule for f in scan_text(text, "x")}
+
+
+@pytest.mark.parametrize("text", ["STDERR_HANDLE = GetStdHandle(-12)", 'SSO_CONFIG_TABLE_NAME = "LiteLLM_SSOConfig"',
+                                  "PATH=/usr/local/bin:/usr/bin:/bin", "LOG_FORMAT=%(asctime)s-%(message)s"])
+def test_ordinary_assignments_are_not_passwords(text):
+    assert "secret_shape" not in {f.rule for f in scan_text(text, "x")}
+
+
+def test_a_process_titled_like_ollama_is_judged_by_its_executable():
+    assert discover._program("/usr/local/bin/node\0ollama serve") is None
+    assert discover._program("/usr/local/bin/ollama\0/usr/local/bin/ollama serve") == "ollama"
