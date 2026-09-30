@@ -188,3 +188,21 @@ def test_large_adversarial_input_scans_in_linear_time():
     for text in ("xoxb-" + "a-" * 100_000, "a:" * 100_000, "a@" * 100_000, "-----BEGIN " * 20_000):
         list(scan_text(text, "x"))
     assert time.monotonic() - t0 < 3  # was 36 s for the first input alone before quantifiers were bounded
+
+
+@pytest.mark.parametrize("source,expected", [
+    ("docs/public/../internal/plan.md", Label.UNKNOWN),       # normalised out of the public tree
+    ("docs/public/../../clients/acme/x.md", Label.PRIVATE),   # normalised into a private tree
+    ("../docs/public/a.md", Label.UNKNOWN),                   # climbs above the root
+    ("./docs/public/a.md", Label.PUBLIC),
+    ("docs\\public\\a.md", Label.PUBLIC),
+])
+def test_sources_are_normalised_before_matching(source, expected):
+    assert decide(cfg(), sources=[source]).label is expected
+
+
+def test_url_sources_with_userinfo_are_not_matchable():
+    c = cfg(public_sources=["https://example.com/*"])
+    assert decide(c, sources=["https://example.com/a"]).label is Label.PUBLIC
+    assert decide(c, sources=["HTTPS://EXAMPLE.COM/a"]).label is Label.PUBLIC
+    assert decide(c, sources=["https://example.com@evil.test/a"]).label is Label.UNKNOWN

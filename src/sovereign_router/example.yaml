@@ -17,7 +17,7 @@ targets:              # in preference order
     api_key_env: OPENAI_API_KEY
 
 provenance:
-  public_sources: ["docs/public/**", "https://*"]
+  public_sources: ["docs/public/**", "https://docs.python.org/*"]   # list public origins one by one; "https://*" would include your intranet
   private_sources: ["**/.env*", ".env*", "clients/**", "**/secrets/**"]
   trusted_clients: ["127.0.0.1", "::1"]
 

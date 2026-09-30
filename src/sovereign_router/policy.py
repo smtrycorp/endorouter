@@ -21,6 +21,8 @@ Where it may go:
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import posixpath
+import re
 from fnmatch import fnmatchcase
 from typing import Sequence
 
@@ -49,8 +51,35 @@ class Decision:
         }
 
 
-def source_label(source: str, cfg: Config) -> tuple[Label, str]:
+_URL = re.compile(r"^[a-z][a-z0-9+.\-]*://", re.IGNORECASE)
+
+
+def canonical_source(source: str) -> str | None:
+    """The form a source is matched in, or None when it cannot be trusted to mean what its prefix suggests.
+
+    Globs treat '*' as matching '/', so 'docs/public/../internal/plan.md' would match 'docs/public/**'. Paths are
+    therefore normalised first, and a path that still climbs above its root, or holds a NUL, is not matchable.
+    URLs are matched as given, with the scheme and host lowercased, and any userinfo refused.
+    """
     s = source.strip()
+    if not s or "\x00" in s:
+        return None
+    if _URL.match(s):
+        scheme, rest = s.split("://", 1)
+        host, sep, path = rest.partition("/")
+        if "@" in host:
+            return None
+        return f"{scheme.lower()}://{host.lower()}{sep}{path}"
+    norm = posixpath.normpath(s.replace("\\", "/"))
+    if norm == ".." or norm.startswith("../") or "/../" in norm:
+        return None
+    return norm
+
+
+def source_label(source: str, cfg: Config) -> tuple[Label, str]:
+    s = canonical_source(source)
+    if s is None:
+        return Label.UNKNOWN, "source_unmatchable"
     if any(fnmatchcase(s, g) for g in cfg.provenance.private_sources):
         return Label.PRIVATE, "source_private"
     if any(fnmatchcase(s, g) for g in cfg.provenance.public_sources):
