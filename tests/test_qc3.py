@@ -50,4 +50,4 @@ def test_fragment_and_spacing_rules_leave_ordinary_text_alone(text):
 
 def test_braces_in_text_reach_the_classifier_intact():
     # round-3 claim checked and rejected: str.format never re-parses the substituted value
-    assert "function() {} {x} {0}" in PROMPT.format(text="function() {} {x} {0}")
+    assert "function() {} {x} {0}" in PROMPT.format(text="function() {} {x} {0}", fence="F")

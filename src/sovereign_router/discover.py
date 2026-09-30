@@ -45,8 +45,42 @@ def default_audit_log() -> str:
 # Programs known to run inference on this machine. A server is trusted as local only when the process that owns its
 # port is one of these; anything else (a gateway, a proxy, an app that can call hosted models) could forward prompts
 # to a cloud, so it is reported but never trusted without an explicit `init --trust <name>`.
-LOCAL_INFERENCE_PROGRAMS = ("ollama", "llama-server", "llama.cpp", "llamafile", "mlx_lm", "vllm", "lm studio",
-                            "lm-studio", "lmstudio", "koboldcpp")
+LOCAL_INFERENCE_PROGRAMS = {"ollama", "llama-server", "llamafile", "vllm", "mlx_lm", "koboldcpp", "lms"}
+LOCAL_INFERENCE_APPS = {"LM Studio.app"}  # an app bundle, matched as a whole path component
+
+
+def _program(cmdline: str) -> str | None:
+    """The local-inference program a command line runs, matched exactly: the executable's name, the module after
+    'python -m', or the script a Python interpreter runs. A substring anywhere in the line is never enough (a proxy
+    run from ~/vllm-tests/ must not count as vLLM)."""
+    import shlex
+
+    # an app bundle's executable path can contain spaces and ps prints it unquoted: check the bundle first
+    if cmdline.startswith("/") and ".app/" in cmdline:
+        bundle = Path(cmdline.split(".app/", 1)[0] + ".app").name
+        if bundle in LOCAL_INFERENCE_APPS:
+            return "lm studio"
+    try:
+        argv = shlex.split(cmdline)
+    except ValueError:
+        argv = cmdline.split()
+    if not argv:
+        return None
+    exe = Path(argv[0])
+    if any(part in LOCAL_INFERENCE_APPS for part in exe.parts):
+        return "lm studio"
+    name = exe.name.lower()
+    if name in LOCAL_INFERENCE_PROGRAMS:
+        return name
+    if name.startswith("python"):
+        if "-m" in argv[1:]:
+            i = argv.index("-m")
+            mod = argv[i + 1].split(".")[0].lower() if i + 1 < len(argv) else ""
+            return mod if mod in LOCAL_INFERENCE_PROGRAMS else None
+        script = next((a for a in argv[1:] if not a.startswith("-")), "")
+        base = Path(script).name.lower()
+        return base if base in LOCAL_INFERENCE_PROGRAMS else None
+    return None
 
 
 def _port_owner(url: str) -> str | None:
@@ -92,8 +126,8 @@ def find_local(timeout: float = 1.0) -> tuple[list[tuple[str, str, str]], list[s
                 continue
             if r.status_code != 200 or not models:
                 continue
-            owner = (_port_owner(url) or "").lower()
-            program = next((prog for prog in LOCAL_INFERENCE_PROGRAMS if prog in owner), None)
+            owner = _port_owner(url) or ""
+            program = _program(owner)
             if program is None:
                 notes.append(f"found a server at {url} but could not verify it runs models on this machine "
                              f"(served by {Path(owner.split()[0]).name if owner else 'an unknown program'}); not used. If you know it is local: "
