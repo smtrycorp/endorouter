@@ -137,3 +137,11 @@ def test_leakbench_markers_never_contain_one_another():
 
     m = {_marked({"id": i, "messages": [{"role": "user", "content": "x"}]})[1] for i in ("p", "public", "p")}
     assert len(m) == 3 and not any(a != b and a in b for a in m for b in m)
+
+
+def test_leakbench_markers_never_look_like_secrets():
+    from sovereign_router.leakbench.runner import _marked
+
+    for i in range(200):
+        body, _ = _marked({"id": str(i), "messages": [{"role": "user", "content": "What is TCP?"}]})
+        assert scan_request(body) == []

@@ -1,5 +1,4 @@
-INVALID RUN: calibration request did not reach a sink (status error:ConnectError): the gateway is not operational or not wired to the sinks, so its refusals mean nothing; 29 case(s) reached no sink and were not refused
-litellm exit 5
+litellm exit 4
 strict exit 0
 strict-noprov exit 0
 control exit 4

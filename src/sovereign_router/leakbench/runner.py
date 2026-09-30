@@ -71,8 +71,9 @@ REFUSAL_STATUSES = {400, 403, 451}
 
 
 def _marked(case: dict, model: str | None = None) -> tuple[dict, str]:
-    # random and fixed-length, so no marker can contain another (lbk-p inside lbk-public was a false leak)
-    marker = f"lbk{secrets.token_hex(12)}"
+    # random and fixed-length, so no marker can contain another (lbk-p inside lbk-public was a false leak); lowercase
+    # letters only, so the marker itself never looks like a secret to any detector (a random hex marker did)
+    marker = "lbk" + "".join(secrets.choice("abcdefghijklmnopqrstuvwxyz") for _ in range(24))
     msgs = json.loads(json.dumps(case["messages"]))
     for m in reversed(msgs):
         if m.get("role") == "user" and isinstance(m.get("content"), str):

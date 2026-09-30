@@ -8,7 +8,7 @@
 |---|---|---|
 | sovereign-router 0.1, strict, with provenance headers | 0 of 24 | 3 of 5 |
 | sovereign-router 0.1, strict, no provenance headers | 0 of 24 | 5 of 5 |
-| sovereign-router 0.1, balanced, local 30B classifier | 0 of 24 | 0 of 5 (1 of 5 on one of three runs) |
+| sovereign-router 0.1, balanced, local 30B classifier | 0 of 24 | 1 of 5 (0 of 5 on two of four runs) |
 | LiteLLM 1.103.1, content filter on every request | 13 of 24 | 0 of 5 |
 | Pass-through control (cloud declared local) | 24 of 24 | 0 of 5 |
 
@@ -44,29 +44,34 @@ Each cell shows private cases leaked, or public cases kept off the cloud, out of
 
 ## Balanced mode
 
-In balanced mode, unlabelled work may go to the cloud when no detector fires and a local model classifies it as public. The classifier here was a 30B open-weight model, quantised to 4 bits, running on the same laptop (an M2 Max with 64 GB). We ran the suite three times as the code changed.
+In balanced mode, unlabelled work may go to the cloud when no detector fires and a local model classifies it as public. The classifier here was a 30B open-weight model, quantised to 4 bits, running on the same laptop (an M2 Max with 64 GB). We ran the suite four times as the code changed.
 
 - **Private prompts.** In every run, no private case reached the cloud. The classifier called all 5 confidential prose cases private.
 - **Unlabelled public prompts.** In every run, the classifier cleared all 3 for the cloud.
-- **The flip.** A public-source request with no substance, "Explain what this README section means for a new user", was kept local in one run and cleared in the other two. The classifier may tighten any request, even one with public provenance, so a flip like this costs a cloud trip and never causes a leak.
+- **The flip.** A public-source request with no substance, "Explain what this README section means for a new user", was kept local in two runs and cleared in the other two. The classifier may tighten any request, even one with public provenance, so a flip like this costs a cloud trip and never causes a leak.
 - **Latency.** Every unlabelled request waits for the classifier. The first run averaged about 9.5 seconds per request on that machine.
 
 ## The harder suite
 
-`cases-hard.jsonl` has 17 cases: 10 private and 7 public. It was built after the first results to test what the main suite made too easy.
+`cases-hard.jsonl` has 20 cases: 13 private and 7 public. It was built after the first results to test what the main suite made too easy.
 
 - **Confidential prose with no giveaway words.** There are 7 cases, such as layoff plans, a term sheet, a patient note and a legal strategy.
+- **Keys from vendors no pattern names.** There are 3, in a `.env` line, a Bearer header and a JSON config.
 - **Secrets split up.** One key is split across two messages, one is typed out letter by letter, and one card number is split across messages.
 - **Public prompts that mention confidentiality.** There are 5, such as NDA clauses, HIPAA definitions and a spy story.
 - **Ordinary public code questions.** There are 2.
 
 | Gateway | Private cases that reached the cloud | Public cases kept off the cloud |
 |---|---|---|
-| sovereign-router, strict | 0 of 10 | 7 of 7 |
-| sovereign-router, balanced, local 30B classifier | 0 of 10 | 0 of 7 |
-| LiteLLM 1.103.1, content filter | 10 of 10 | 1 of 7 (a keyword block on the NDA question) |
+| sovereign-router, strict | 0 of 13 | 7 of 7 |
+| sovereign-router, balanced, local 30B classifier | 0 of 13 | 0 of 7 |
+| LiteLLM 1.103.1, content filter | 13 of 13 | 1 of 7 (a keyword block on the NDA question) |
 
-**The first balanced run on this suite leaked 1 of 10.** It was the key split across two messages. No single string held a whole key, so no detector fired, and the classifier called the conversation public. We added two detector rules. The first flags a distinctive issuer prefix standing on its own, such as `AKIAIOSF`. The second rejoins text typed out letter by letter. The rerun above leaked none. The suite is still small, and it was written by the same authors as the router.
+**The first balanced run on this suite leaked 1 of 10.** It was the key split across two messages. No single string held a whole key, so no detector fired, and the classifier called the conversation public. We added two detector rules. The first flags a distinctive issuer prefix standing on its own, such as `AKIAIOSF`. The second rejoins text typed out letter by letter. The rerun above leaked none.
+
+The three unknown-vendor keys are caught by a rule with no vendor list, described in the README. While adding it we found that leakbench's own random hex markers looked like secrets to that rule, which made 6 public cases look private. Markers are now random lowercase letters, and a test checks that no marker trips a detector.
+
+The suite is still small, and it was written by the same authors as the router.
 
 ## How LiteLLM was configured
 
