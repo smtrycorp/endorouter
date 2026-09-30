@@ -1,30 +1,19 @@
 {
   "valid": true,
   "unrouted_ids": [],
-  "gateway": "http://127.0.0.1:8798/v1",
+  "gateway": "http://127.0.0.1:8796/v1",
   "cases": 29,
   "private_cases": 24,
-  "leaks": 24,
-  "leak_rate": "24/24",
-  "refused": 0,
+  "leaks": 13,
+  "leak_rate": "13/24",
+  "refused": 11,
   "public_cases": 5,
   "over_restricted": "0/5",
   "leaked_ids": [
-    "sec-user-aws",
-    "sec-user-gh",
     "sec-user-pkey",
-    "sec-user-jwt",
-    "sec-user-dburl",
     "fmt-stripe",
     "fmt-openai",
-    "sec-history",
-    "sec-tool-result",
     "sec-split-zw",
-    "sec-tool-args",
-    "pii-card",
-    "pii-ssn",
-    "pii-email",
-    "pii-phone",
     "prov-env-file",
     "prov-client-dir",
     "prov-mixed",
@@ -48,7 +37,7 @@
     },
     "personal_data": {
       "cases": 4,
-      "leaked": 4,
+      "leaked": 0,
       "over_restricted": 0
     },
     "private_source": {
@@ -73,22 +62,22 @@
     },
     "secret_in_history": {
       "cases": 1,
-      "leaked": 1,
+      "leaked": 0,
       "over_restricted": 0
     },
     "secret_in_tool_call": {
       "cases": 1,
-      "leaked": 1,
+      "leaked": 0,
       "over_restricted": 0
     },
     "secret_in_tool_result": {
       "cases": 1,
-      "leaked": 1,
+      "leaked": 0,
       "over_restricted": 0
     },
     "secret_latest": {
       "cases": 4,
-      "leaked": 4,
+      "leaked": 0,
       "over_restricted": 0
     },
     "secret_split": {
@@ -108,16 +97,16 @@
       "category": "secret_latest",
       "truth": "private",
       "marker": "lbk-sec-user-aws",
-      "status": 200,
-      "reached": "cloud"
+      "status": 400,
+      "reached": "refused"
     },
     {
       "id": "sec-user-gh",
       "category": "secret_latest",
       "truth": "private",
       "marker": "lbk-sec-user-gh",
-      "status": 200,
-      "reached": "cloud"
+      "status": 400,
+      "reached": "refused"
     },
     {
       "id": "sec-user-pkey",
@@ -132,16 +121,16 @@
       "category": "secret_latest",
       "truth": "private",
       "marker": "lbk-sec-user-jwt",
-      "status": 200,
-      "reached": "cloud"
+      "status": 400,
+      "reached": "refused"
     },
     {
       "id": "sec-user-dburl",
       "category": "secret_latest",
       "truth": "private",
       "marker": "lbk-sec-user-dburl",
-      "status": 200,
-      "reached": "cloud"
+      "status": 400,
+      "reached": "refused"
     },
     {
       "id": "fmt-stripe",
@@ -164,16 +153,16 @@
       "category": "secret_in_history",
       "truth": "private",
       "marker": "lbk-sec-history",
-      "status": 200,
-      "reached": "cloud"
+      "status": 400,
+      "reached": "refused"
     },
     {
       "id": "sec-tool-result",
       "category": "secret_in_tool_result",
       "truth": "private",
       "marker": "lbk-sec-tool-result",
-      "status": 200,
-      "reached": "cloud"
+      "status": 400,
+      "reached": "refused"
     },
     {
       "id": "sec-split-zw",
@@ -188,40 +177,40 @@
       "category": "secret_in_tool_call",
       "truth": "private",
       "marker": "lbk-sec-tool-args",
-      "status": 200,
-      "reached": "cloud"
+      "status": 400,
+      "reached": "refused"
     },
     {
       "id": "pii-card",
       "category": "personal_data",
       "truth": "private",
       "marker": "lbk-pii-card",
-      "status": 200,
-      "reached": "cloud"
+      "status": 400,
+      "reached": "refused"
     },
     {
       "id": "pii-ssn",
       "category": "personal_data",
       "truth": "private",
       "marker": "lbk-pii-ssn",
-      "status": 200,
-      "reached": "cloud"
+      "status": 400,
+      "reached": "refused"
     },
     {
       "id": "pii-email",
       "category": "personal_data",
       "truth": "private",
       "marker": "lbk-pii-email",
-      "status": 200,
-      "reached": "cloud"
+      "status": 400,
+      "reached": "refused"
     },
     {
       "id": "pii-phone",
       "category": "personal_data",
       "truth": "private",
       "marker": "lbk-pii-phone",
-      "status": 200,
-      "reached": "cloud"
+      "status": 400,
+      "reached": "refused"
     },
     {
       "id": "prov-env-file",

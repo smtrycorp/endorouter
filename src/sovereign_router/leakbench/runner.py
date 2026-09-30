@@ -7,6 +7,11 @@ Each case carries a unique marker. After sending every case through the gateway,
 cloud sink and its ground truth is private. It was OVER-RESTRICTED if its truth is public and it never reached the cloud
 (a cost, not a leak; strict routers accept it by design). The result is measured at the sink, never taken from the
 gateway's own report.
+
+A case that reached neither sink counts as REFUSED only when the gateway answered with a deliberate refusal status (400, 403,
+451): that is safe for private data and over-restriction for public data. Anything else that reached no sink (connection
+error, 404, 5xx) means the case was never routed, and the whole run is INVALID, because a gateway that answers nothing
+trivially leaks nothing.
 """
 
 from __future__ import annotations
@@ -53,17 +58,21 @@ def load_cases(path: str | None) -> list[dict]:
     return [json.loads(line) for line in text.splitlines() if line.strip()]
 
 
-def _marked(case: dict) -> tuple[dict, str]:
+REFUSAL_STATUSES = {400, 403, 451}
+
+
+def _marked(case: dict, model: str | None = None) -> tuple[dict, str]:
     marker = f"lbk-{case['id']}"
     msgs = json.loads(json.dumps(case["messages"]))
     for m in reversed(msgs):
         if m.get("role") == "user" and isinstance(m.get("content"), str):
             m["content"] = f"{m['content']}\n[{marker}]"
             break
-    return {"model": case.get("model", "auto"), "messages": msgs, **({"tools": case["tools"]} if case.get("tools") else {})}, marker
+    return {"model": model or case.get("model", "auto"), "messages": msgs, **({"tools": case["tools"]} if case.get("tools") else {})}, marker
 
 
-async def run(base_url: str, cases_path: str | None = None, *, sink_port: int = 8799, sources_header: bool = True) -> dict:
+async def run(base_url: str, cases_path: str | None = None, *, sink_port: int = 8799, sources_header: bool = True,
+              model: str | None = None, extra_body: dict | None = None) -> dict:
     cases = load_cases(cases_path)
     cloud_seen: list[str] = []
     local_seen: list[str] = []
@@ -73,7 +82,9 @@ async def run(base_url: str, cases_path: str | None = None, *, sink_port: int = 
     try:
         async with httpx.AsyncClient(timeout=60, trust_env=False) as client:
             for c in cases:
-                body, marker = _marked(c)
+                body, marker = _marked(c, model)
+                if extra_body:
+                    body.update(json.loads(json.dumps(extra_body).replace("{id}", c["id"])))
                 headers = {}
                 if sources_header and c.get("sources"):
                     headers["x-sovereign-sources"] = ",".join(c["sources"])
@@ -95,7 +106,14 @@ async def run(base_url: str, cases_path: str | None = None, *, sink_port: int = 
     leaks, over, private_n, public_n = [], [], 0, 0
     for row in rows:
         reached_cloud = row["marker"] in cloud_blob
-        row["reached"] = "cloud" if reached_cloud else ("local" if row["marker"] in local_blob else "none")
+        if reached_cloud:
+            row["reached"] = "cloud"
+        elif row["marker"] in local_blob:
+            row["reached"] = "local"
+        elif row["status"] in REFUSAL_STATUSES:
+            row["reached"] = "refused"
+        else:
+            row["reached"] = "none"
         cat = by_cat[row["category"]]
         cat["cases"] += 1
         if row["truth"] == "private":
@@ -108,8 +126,7 @@ async def run(base_url: str, cases_path: str | None = None, *, sink_port: int = 
             if not reached_cloud:
                 over.append(row["id"])
                 cat["over_restricted"] += 1
-    # A case that reached neither destination was never routed (gateway down, wrong URL, refused). A gateway that answers
-    # nothing trivially "leaks nothing", so any unrouted case makes the whole run INVALID rather than a pass.
+    # Never routed (gateway down, wrong URL, server error): the run is INVALID rather than a pass.
     unrouted = [r["id"] for r in rows if r["reached"] == "none"]
     return {
         "valid": not unrouted,
@@ -119,6 +136,7 @@ async def run(base_url: str, cases_path: str | None = None, *, sink_port: int = 
         "private_cases": private_n,
         "leaks": len(leaks),
         "leak_rate": f"{len(leaks)}/{private_n}",
+        "refused": sum(1 for r in rows if r["reached"] == "refused"),
         "public_cases": public_n,
         "over_restricted": f"{len(over)}/{public_n}",
         "leaked_ids": leaks,

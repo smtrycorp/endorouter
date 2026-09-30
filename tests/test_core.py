@@ -154,3 +154,9 @@ def test_capability_filters_targets():
     assert d.permitted == ("cloud",)
     d = decide(cfg(), capability="reasoning")  # unknown + capability only a cloud target has: refuse, never leak
     assert d.selected is None
+
+
+def test_phone_rule_ignores_digit_runs_inside_tokens():
+    rules = {f.rule for f in scan_text("xoxb-1234567890123-1234567890123-AbCdEfGhIjKlMnOpQrStUvWx", "x")}
+    assert "slack_token" in rules and "phone_number" not in rules
+    assert any(f.rule == "phone_number" for f in scan_text("call me on +1 415 555 0132 tomorrow", "x"))

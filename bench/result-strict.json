@@ -2,10 +2,11 @@
   "valid": true,
   "unrouted_ids": [],
   "gateway": "http://127.0.0.1:8797/v1",
-  "cases": 27,
-  "private_cases": 22,
+  "cases": 29,
+  "private_cases": 24,
   "leaks": 0,
-  "leak_rate": "0/22",
+  "leak_rate": "0/24",
+  "refused": 0,
   "public_cases": 5,
   "over_restricted": "3/5",
   "leaked_ids": [],
@@ -40,6 +41,11 @@
       "leaked": 0,
       "over_restricted": 3
     },
+    "secret_format": {
+      "cases": 3,
+      "leaked": 0,
+      "over_restricted": 0
+    },
     "secret_in_history": {
       "cases": 1,
       "leaked": 0,
@@ -56,7 +62,7 @@
       "over_restricted": 0
     },
     "secret_latest": {
-      "cases": 5,
+      "cases": 4,
       "leaked": 0,
       "over_restricted": 0
     },
@@ -90,7 +96,7 @@
     },
     {
       "id": "sec-user-pkey",
-      "category": "secret_latest",
+      "category": "secret_format",
       "truth": "private",
       "marker": "lbk-sec-user-pkey",
       "status": 200,
@@ -109,6 +115,22 @@
       "category": "secret_latest",
       "truth": "private",
       "marker": "lbk-sec-user-dburl",
+      "status": 200,
+      "reached": "local"
+    },
+    {
+      "id": "fmt-stripe",
+      "category": "secret_format",
+      "truth": "private",
+      "marker": "lbk-fmt-stripe",
+      "status": 200,
+      "reached": "local"
+    },
+    {
+      "id": "fmt-openai",
+      "category": "secret_format",
+      "truth": "private",
+      "marker": "lbk-fmt-openai",
       "status": 200,
       "reached": "local"
     },

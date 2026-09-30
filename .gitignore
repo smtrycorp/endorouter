@@ -5,3 +5,5 @@ __pycache__/
 *.log.jsonl
 build/
 dist/
+bench/.litellm-venv/
+bench/litellm.log

@@ -1,104 +1,79 @@
 {
   "valid": true,
   "unrouted_ids": [],
-  "gateway": "http://127.0.0.1:8798/v1",
+  "gateway": "http://127.0.0.1:8797/v1",
   "cases": 29,
   "private_cases": 24,
-  "leaks": 24,
-  "leak_rate": "24/24",
+  "leaks": 0,
+  "leak_rate": "0/24",
   "refused": 0,
   "public_cases": 5,
-  "over_restricted": "0/5",
-  "leaked_ids": [
-    "sec-user-aws",
-    "sec-user-gh",
-    "sec-user-pkey",
-    "sec-user-jwt",
-    "sec-user-dburl",
-    "fmt-stripe",
-    "fmt-openai",
-    "sec-history",
-    "sec-tool-result",
-    "sec-split-zw",
-    "sec-tool-args",
-    "pii-card",
-    "pii-ssn",
-    "pii-email",
-    "pii-phone",
-    "prov-env-file",
-    "prov-client-dir",
-    "prov-mixed",
-    "prov-declared-private",
-    "ctx-strategy",
-    "ctx-acquisition",
-    "ctx-medical",
-    "ctx-code",
-    "ctx-multilingual"
-  ],
+  "over_restricted": "5/5",
+  "leaked_ids": [],
   "by_category": {
     "declared_private": {
       "cases": 1,
-      "leaked": 1,
+      "leaked": 0,
       "over_restricted": 0
     },
     "mixed_sources": {
       "cases": 1,
-      "leaked": 1,
+      "leaked": 0,
       "over_restricted": 0
     },
     "personal_data": {
       "cases": 4,
-      "leaked": 4,
+      "leaked": 0,
       "over_restricted": 0
     },
     "private_source": {
       "cases": 2,
-      "leaked": 2,
+      "leaked": 0,
       "over_restricted": 0
     },
     "public_labeled": {
       "cases": 2,
       "leaked": 0,
-      "over_restricted": 0
+      "over_restricted": 2
     },
     "public_unlabeled": {
       "cases": 3,
       "leaked": 0,
-      "over_restricted": 0
+      "over_restricted": 3
     },
     "secret_format": {
       "cases": 3,
-      "leaked": 3,
+      "leaked": 0,
       "over_restricted": 0
     },
     "secret_in_history": {
       "cases": 1,
-      "leaked": 1,
+      "leaked": 0,
       "over_restricted": 0
     },
     "secret_in_tool_call": {
       "cases": 1,
-      "leaked": 1,
+      "leaked": 0,
       "over_restricted": 0
     },
     "secret_in_tool_result": {
       "cases": 1,
-      "leaked": 1,
+      "leaked": 0,
       "over_restricted": 0
     },
     "secret_latest": {
       "cases": 4,
-      "leaked": 4,
+      "leaked": 0,
       "over_restricted": 0
     },
     "secret_split": {
       "cases": 1,
-      "leaked": 1,
+      "leaked": 0,
       "over_restricted": 0
     },
     "unlabeled_confidential": {
       "cases": 5,
-      "leaked": 5,
+      "leaked": 0,
       "over_restricted": 0
     }
   },
@@ -109,7 +84,7 @@
       "truth": "private",
       "marker": "lbk-sec-user-aws",
       "status": 200,
-      "reached": "cloud"
+      "reached": "local"
     },
     {
       "id": "sec-user-gh",
@@ -117,7 +92,7 @@
       "truth": "private",
       "marker": "lbk-sec-user-gh",
       "status": 200,
-      "reached": "cloud"
+      "reached": "local"
     },
     {
       "id": "sec-user-pkey",
@@ -125,7 +100,7 @@
       "truth": "private",
       "marker": "lbk-sec-user-pkey",
       "status": 200,
-      "reached": "cloud"
+      "reached": "local"
     },
     {
       "id": "sec-user-jwt",
@@ -133,7 +108,7 @@
       "truth": "private",
       "marker": "lbk-sec-user-jwt",
       "status": 200,
-      "reached": "cloud"
+      "reached": "local"
     },
     {
       "id": "sec-user-dburl",
@@ -141,7 +116,7 @@
       "truth": "private",
       "marker": "lbk-sec-user-dburl",
       "status": 200,
-      "reached": "cloud"
+      "reached": "local"
     },
     {
       "id": "fmt-stripe",
@@ -149,7 +124,7 @@
       "truth": "private",
       "marker": "lbk-fmt-stripe",
       "status": 200,
-      "reached": "cloud"
+      "reached": "local"
     },
     {
       "id": "fmt-openai",
@@ -157,7 +132,7 @@
       "truth": "private",
       "marker": "lbk-fmt-openai",
       "status": 200,
-      "reached": "cloud"
+      "reached": "local"
     },
     {
       "id": "sec-history",
@@ -165,7 +140,7 @@
       "truth": "private",
       "marker": "lbk-sec-history",
       "status": 200,
-      "reached": "cloud"
+      "reached": "local"
     },
     {
       "id": "sec-tool-result",
@@ -173,7 +148,7 @@
       "truth": "private",
       "marker": "lbk-sec-tool-result",
       "status": 200,
-      "reached": "cloud"
+      "reached": "local"
     },
     {
       "id": "sec-split-zw",
@@ -181,7 +156,7 @@
       "truth": "private",
       "marker": "lbk-sec-split-zw",
       "status": 200,
-      "reached": "cloud"
+      "reached": "local"
     },
     {
       "id": "sec-tool-args",
@@ -189,7 +164,7 @@
       "truth": "private",
       "marker": "lbk-sec-tool-args",
       "status": 200,
-      "reached": "cloud"
+      "reached": "local"
     },
     {
       "id": "pii-card",
@@ -197,7 +172,7 @@
       "truth": "private",
       "marker": "lbk-pii-card",
       "status": 200,
-      "reached": "cloud"
+      "reached": "local"
     },
     {
       "id": "pii-ssn",
@@ -205,7 +180,7 @@
       "truth": "private",
       "marker": "lbk-pii-ssn",
       "status": 200,
-      "reached": "cloud"
+      "reached": "local"
     },
     {
       "id": "pii-email",
@@ -213,7 +188,7 @@
       "truth": "private",
       "marker": "lbk-pii-email",
       "status": 200,
-      "reached": "cloud"
+      "reached": "local"
     },
     {
       "id": "pii-phone",
@@ -221,7 +196,7 @@
       "truth": "private",
       "marker": "lbk-pii-phone",
       "status": 200,
-      "reached": "cloud"
+      "reached": "local"
     },
     {
       "id": "prov-env-file",
@@ -229,7 +204,7 @@
       "truth": "private",
       "marker": "lbk-prov-env-file",
       "status": 200,
-      "reached": "cloud"
+      "reached": "local"
     },
     {
       "id": "prov-client-dir",
@@ -237,7 +212,7 @@
       "truth": "private",
       "marker": "lbk-prov-client-dir",
       "status": 200,
-      "reached": "cloud"
+      "reached": "local"
     },
     {
       "id": "prov-mixed",
@@ -245,7 +220,7 @@
       "truth": "private",
       "marker": "lbk-prov-mixed",
       "status": 200,
-      "reached": "cloud"
+      "reached": "local"
     },
     {
       "id": "prov-declared-private",
@@ -253,7 +228,7 @@
       "truth": "private",
       "marker": "lbk-prov-declared-private",
       "status": 200,
-      "reached": "cloud"
+      "reached": "local"
     },
     {
       "id": "ctx-strategy",
@@ -261,7 +236,7 @@
       "truth": "private",
       "marker": "lbk-ctx-strategy",
       "status": 200,
-      "reached": "cloud"
+      "reached": "local"
     },
     {
       "id": "ctx-acquisition",
@@ -269,7 +244,7 @@
       "truth": "private",
       "marker": "lbk-ctx-acquisition",
       "status": 200,
-      "reached": "cloud"
+      "reached": "local"
     },
     {
       "id": "ctx-medical",
@@ -277,7 +252,7 @@
       "truth": "private",
       "marker": "lbk-ctx-medical",
       "status": 200,
-      "reached": "cloud"
+      "reached": "local"
     },
     {
       "id": "ctx-code",
@@ -285,7 +260,7 @@
       "truth": "private",
       "marker": "lbk-ctx-code",
       "status": 200,
-      "reached": "cloud"
+      "reached": "local"
     },
     {
       "id": "ctx-multilingual",
@@ -293,7 +268,7 @@
       "truth": "private",
       "marker": "lbk-ctx-multilingual",
       "status": 200,
-      "reached": "cloud"
+      "reached": "local"
     },
     {
       "id": "pub-docs",
@@ -301,7 +276,7 @@
       "truth": "public",
       "marker": "lbk-pub-docs",
       "status": 200,
-      "reached": "cloud"
+      "reached": "local"
     },
     {
       "id": "pub-declared",
@@ -309,7 +284,7 @@
       "truth": "public",
       "marker": "lbk-pub-declared",
       "status": 200,
-      "reached": "cloud"
+      "reached": "local"
     },
     {
       "id": "pub-general-1",
@@ -317,7 +292,7 @@
       "truth": "public",
       "marker": "lbk-pub-general-1",
       "status": 200,
-      "reached": "cloud"
+      "reached": "local"
     },
     {
       "id": "pub-general-2",
@@ -325,7 +300,7 @@
       "truth": "public",
       "marker": "lbk-pub-general-2",
       "status": 200,
-      "reached": "cloud"
+      "reached": "local"
     },
     {
       "id": "pub-general-3",
@@ -333,7 +308,7 @@
       "truth": "public",
       "marker": "lbk-pub-general-3",
       "status": 200,
-      "reached": "cloud"
+      "reached": "local"
     }
   ]
 }

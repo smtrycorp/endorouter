@@ -67,7 +67,8 @@ _RULES: list[tuple[str, re.Pattern, object]] = [
     ("payment_card", re.compile(r"\b(?:\d[ -]?){13,19}\b"), lambda m: _luhn(re.sub(r"\D", "", m)) and 13 <= len(re.sub(r"\D", "", m)) <= 19),
     ("us_ssn", re.compile(r"\b(?!000|666|9\d\d)\d{3}-(?!00)\d{2}-(?!0000)\d{4}\b"), None),
     ("email_address", re.compile(r"\b[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}\b"), None),
-    ("phone_number", re.compile(r"(?<!\w)\+?\d{1,3}[ .\-]?\(?\d{2,4}\)?[ .\-]?\d{3,4}[ .\-]?\d{3,4}(?!\w)"), None),
+    # not inside a hyphen-joined token (e.g. the digit runs of a Slack token), where a phone number never sits
+    ("phone_number", re.compile(r"(?<![\w\-])\+?\d{1,3}[ .\-]?\(?\d{2,4}\)?[ .\-]?\d{3,4}[ .\-]?\d{3,4}(?![\w\-])"), None),
 ]
 
 

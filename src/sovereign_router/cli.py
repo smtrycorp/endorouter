@@ -84,7 +84,8 @@ def cmd_serve(a) -> int:
 def cmd_leakbench(a) -> int:
     from .leakbench.runner import run
 
-    report = asyncio.run(run(a.base_url, a.cases, sink_port=a.sink_port, sources_header=not a.no_provenance))
+    report = asyncio.run(run(a.base_url, a.cases, sink_port=a.sink_port, sources_header=not a.no_provenance,
+                         model=a.model, extra_body=json.loads(a.extra_body) if a.extra_body else None))
     print(json.dumps(report, indent=2))
     if not report["valid"]:
         print(f"INVALID RUN: {len(report['unrouted_ids'])} case(s) reached neither the local nor the cloud sink; "
@@ -112,6 +113,8 @@ def main(argv: list[str] | None = None) -> int:
     lb.add_argument("--cases", default=None, help="cases JSONL (default: the bundled suite)")
     lb.add_argument("--sink-port", type=int, default=8799, help="port of the recording fake cloud the gateway must point at")
     lb.add_argument("--no-provenance", action="store_true", help="send no x-sovereign-* headers (for gateways without them)")
+    lb.add_argument("--model", help="model name to request for every case (default: each case's own, usually 'auto')")
+    lb.add_argument("--extra-body", help="JSON merged into every request body; '{id}' becomes the case id (e.g. a session id)")
     a = ap.parse_args(argv)
     return {"doctor": cmd_doctor, "explain": cmd_explain, "serve": cmd_serve, "leakbench": cmd_leakbench}[a.cmd](a)
 
