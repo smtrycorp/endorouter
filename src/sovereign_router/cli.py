@@ -1,4 +1,4 @@
-"""Command line: doctor, explain, serve, leakbench."""
+"""Command line: init, doctor, explain, serve, leakbench."""
 
 from __future__ import annotations
 
@@ -16,9 +16,12 @@ from .labels import Label
 from .policy import decide
 
 LOOPBACK = {"127.0.0.1", "localhost", "::1"}
+DEFAULT_CONFIG = "sovereign-router.yaml"
 
 
 def _cfg(path: str):
+    if path == DEFAULT_CONFIG and not Path(path).exists():
+        return _auto()[2]  # no config file: use what discovery finds, as `serve` does
     try:
         return load_config(path)
     except ConfigError as e:
@@ -71,12 +74,44 @@ def cmd_explain(a) -> int:
     return 0 if d.selected else 3
 
 
+def _auto():
+    from .config import parse_config
+    from .discover import auto_config
+
+    try:
+        raw, notes = auto_config()
+    except RuntimeError as e:
+        sys.exit(str(e))
+    return raw, notes, parse_config(raw)
+
+
+def cmd_init(a) -> int:
+    import yaml
+
+    if Path(a.config).exists() and not a.force:
+        sys.exit(f"{a.config} already exists (use --force to replace it)")
+    raw, notes, _ = _auto()
+    for n in notes:
+        print(n)
+    Path(a.config).write_text("# written by `sovereign-router init`: everything below was found, not asked for\n"
+                              + yaml.safe_dump(raw, sort_keys=False))
+    print(f"wrote {a.config}; strict mode: nothing leaves this machine unless a trusted client labels it public")
+    return 0
+
+
 def cmd_serve(a) -> int:
     import uvicorn
 
     from .server import create_app
 
-    cfg = _cfg(a.config)
+    if a.config == DEFAULT_CONFIG and not Path(a.config).exists():
+        # zero-question start: discover the local server and any cloud keys, protect standard secret files, strict mode
+        _, notes, cfg = _auto()
+        for n in notes:
+            print(n)
+        print(f"strict mode, audit log {cfg.audit_log}; serving on http://{a.host}:{a.port}/v1")
+    else:
+        cfg = load_config(a.config) if Path(a.config).exists() else _cfg(a.config)
     # proxy headers off: X-Forwarded-For must never let a caller borrow a trusted client's address. Behind a reverse
     # proxy the proxy itself is the peer; list it in trusted_clients only if every caller behind it is trusted.
     uvicorn.run(create_app(cfg), host=a.host, port=a.port, log_level="warning", proxy_headers=False,
@@ -99,9 +134,11 @@ def cmd_leakbench(a) -> int:
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="sovereign-router", description=__doc__)
     sub = ap.add_subparsers(dest="cmd", required=True)
-    for name in ("doctor", "explain", "serve"):
+    for name in ("init", "doctor", "explain", "serve"):
         p = sub.add_parser(name)
-        p.add_argument("-c", "--config", default="sovereign-router.yaml")
+        p.add_argument("-c", "--config", default=DEFAULT_CONFIG)
+        if name == "init":
+            p.add_argument("--force", action="store_true", help="replace an existing config")
         if name == "explain":
             p.add_argument("-f", "--file", help="a prompt or a JSON request body (default: stdin, so prompts stay out of shell history)")
             p.add_argument("--source", action="append", default=[], help="a source identifier (repeatable)")
@@ -118,7 +155,8 @@ def main(argv: list[str] | None = None) -> int:
     lb.add_argument("--model", help="model name to request for every case (default: each case's own, usually 'auto')")
     lb.add_argument("--extra-body", help="JSON merged into every request body; '{id}' becomes the case id (e.g. a session id)")
     a = ap.parse_args(argv)
-    return {"doctor": cmd_doctor, "explain": cmd_explain, "serve": cmd_serve, "leakbench": cmd_leakbench}[a.cmd](a)
+    return {"init": cmd_init, "doctor": cmd_doctor, "explain": cmd_explain, "serve": cmd_serve,
+            "leakbench": cmd_leakbench}[a.cmd](a)
 
 
 if __name__ == "__main__":

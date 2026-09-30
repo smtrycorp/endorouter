@@ -17,16 +17,26 @@ It speaks the OpenAI chat completions API, so any client that lets you set a bas
 
 ```
 pip install .    # from a clone; not yet on PyPI
-sovereign-router doctor -c sovereign-router.yaml
-sovereign-router serve -c sovereign-router.yaml
+sovereign-router serve
 ```
 
-Then point your client at `http://127.0.0.1:8787/v1`. Start from the bundled `example.yaml`: one local target (Ollama, LM Studio, llama.cpp, mlx-lm or any OpenAI-compatible server) and, optionally, one cloud target.
+Then point your client at `http://127.0.0.1:8787/v1`. There are no questions and no config file. On start the router does three things:
+
+- **It finds your local model.** It checks the ports Ollama, LM Studio, llama.cpp, vLLM and Jan listen on by default, and uses the first model it finds.
+- **It adds cloud providers only if their key is already set.** Examples are `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, `MISTRAL_API_KEY`, `GROQ_API_KEY` and `OPENROUTER_API_KEY`. A client asks for a cloud model as `openai/gpt-5`, and gets it only for work labelled public.
+- **It protects standard secret files.** Examples are `.env`, `*.pem`, SSH keys, `.aws/credentials` and `.netrc`. It runs in strict mode, so anything unlabelled stays local.
+
+To see or change what it found, write it to a file:
+
+```
+sovereign-router init        # writes sovereign-router.yaml; nothing is asked, everything is detected
+sovereign-router doctor
+```
 
 To see a decision without sending anything:
 
 ```
-sovereign-router explain -c sovereign-router.yaml --source clients/acme/brief.md < prompt.txt
+sovereign-router explain --source clients/acme/brief.md < prompt.txt
 ```
 
 ## How a request is labelled
@@ -51,7 +61,7 @@ x-sovereign-label: public
 
 Only clients listed in `trusted_clients` can declare anything public. Any client can declare `private`.
 
-**Detectors check formats, not word lists.** They cover private keys, cloud and SaaS tokens, JWTs with a decodable header, credentials in URLs, card numbers with a valid issuer prefix, length and Luhn checksum, US social security numbers, email addresses and phone numbers. They scan every field that is forwarded upstream: all messages including history, tool calls, tool results, tool definitions, stop sequences and response schemas. That includes dict keys, numbers, and JSON carried inside strings. Before matching, text is NFKC-normalised, every invisible and default-ignorable character is removed, and common Cyrillic and Greek look-alike letters are mapped to Latin. Base64 runs are decoded one level and scanned too, with no cap on how many. Structure nested too deeply to inspect counts as a finding. Every pattern is bounded, so scanning takes linear time: about a second per megabyte on a laptop.
+**Detectors check formats, not word lists.** One rule needs no vendor list at all. It flags any token shaped like a machine-generated secret: long, random, mixing character classes, and not made of word-like runs. It catches keys from vendors nobody has written a pattern for. On synthetic keys from made-up vendors it found 97% of base62 and base64 shapes, but only about 45% of bare hex, which looks the same as a file hash. On 16.8 MB of public code, docs and lockfiles it raised 4.2 false alarms per megabyte. Precise format rules sit alongside it for private keys, cloud and SaaS tokens, JWTs with a decodable header, credentials in URLs, card numbers with a valid issuer prefix, length and Luhn checksum, US social security numbers, email addresses and phone numbers. They scan every field that is forwarded upstream: all messages including history, tool calls, tool results, tool definitions, stop sequences and response schemas. That includes dict keys, numbers, and JSON carried inside strings. Before matching, text is NFKC-normalised, every invisible and default-ignorable character is removed, and common Cyrillic and Greek look-alike letters are mapped to Latin. Base64 runs are decoded one level and scanned too, with no cap on how many. Structure nested too deeply to inspect counts as a finding. Every pattern is bounded, so scanning takes linear time: about a second per megabyte on a laptop.
 
 What detectors cannot see: secrets split across messages, encrypted or compressed data, other encodings, and anything that is sensitive because of what it means rather than how it looks. That is the reason unlabelled work stays local by default.
 

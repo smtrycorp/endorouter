@@ -15,3 +15,6 @@
 {"id": "pubconf-breach", "category": "public_mentions_confidential", "truth": "public", "messages": [{"role": "user", "content": "Under GDPR, how quickly must a company report a personal data breach?"}]}
 {"id": "pubcode-python", "category": "public_code", "truth": "public", "messages": [{"role": "user", "content": "Why does this fail? def add(a, b) return a + b"}]}
 {"id": "pubcode-regex", "category": "public_code", "truth": "public", "messages": [{"role": "user", "content": "Explain the regex ^[a-z0-9_-]{3,16}$"}]}
+{"id": "unk-env", "category": "secret_unknown_vendor", "truth": "private", "messages": [{"role": "user", "content": "Why won't the client start? My .env has NIMBUS_KEY=nmb_sk_R7tY3wB6zq4f9KxP2mQ8vL1n and the region is set."}]}
+{"id": "unk-bearer", "category": "secret_unknown_vendor", "truth": "private", "messages": [{"role": "user", "content": "This request 401s: curl -H 'Authorization: Bearer 7Hq2Lr9Xw4Pz8Kv1Nm6Bt3Yc5Df0Gs' https://api.orbital.dev/v2/jobs"}]}
+{"id": "unk-json", "category": "secret_unknown_vendor", "truth": "private", "messages": [{"role": "user", "content": "Validate this config: {\"endpoint\": \"https://ingest.lumen.io\", \"apiKey\": \"lmn.Zt8Qw3Er6Ty9Ui2Op5As1Df4Gh7\"}"}]}

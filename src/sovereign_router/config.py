@@ -20,7 +20,7 @@ class ConfigError(ValueError):
 class Target:
     name: str
     url: str  # base URL of an OpenAI-compatible API, e.g. http://127.0.0.1:11434/v1
-    model: str  # model name sent upstream
+    model: str  # model name sent upstream; "*" = pass-through, the client asks for "<target>/<model>"
     location: str  # "local" or "cloud", declared by the operator (localhost is not proof: see README)
     capabilities: tuple[str, ...] = ("chat",)
     api_key_env: str | None = None  # name of an environment variable holding the key; never the key itself

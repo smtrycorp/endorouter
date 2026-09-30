@@ -158,10 +158,16 @@ def decide(
         # only configured identifiers enter the audit log, never arbitrary request text
         reasons.append(f"capability:{capability}" if capability in known else "capability:unrecognised")
 
-    permitted = tuple(t.name for t in allowed)
     model = (requested_model or "auto").strip()
+    if model in ("", "auto"):
+        allowed = [t for t in allowed if t.model != "*"]  # a pass-through target has no model of its own
+    permitted = tuple(t.name for t in allowed)
     if model not in ("", "auto"):
         t = cfg.target(model)
+        if t is None and "/" in model:
+            # "<target>/<model>" names a pass-through target (model "*") and the upstream model to ask it for
+            head = cfg.target(model.split("/", 1)[0])
+            t = head if head is not None and head.model == "*" else None
         if t is None:
             return Decision(label, permitted, None, tuple(reasons + ["unknown_target"]), cleared,
                             "the requested model is not a configured target (use 'auto' or a target name)")

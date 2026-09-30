@@ -113,7 +113,12 @@ class Router:
         stream = bool(body.get("stream"))
         for target in permitted_targets(self.cfg, decision):
             t0 = time.monotonic()
-            upstream = {**body, "model": target.model}
+            requested = str(body.get("model") or "")
+            model = requested.split("/", 1)[1] if target.model == "*" and "/" in requested else target.model
+            if model == "*":  # never send the wildcard itself upstream
+                attempts.append({"target": target.name, "error": "no_model"})
+                continue
+            upstream = {**body, "model": model}
             headers = {"content-type": "application/json"}
             if target.api_key_env:
                 key = os.environ.get(target.api_key_env, "")
