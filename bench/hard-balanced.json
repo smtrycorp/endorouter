@@ -1,0 +1,198 @@
+{
+  "valid": true,
+  "problems": [],
+  "unrouted_ids": [],
+  "unobserved_ids": [],
+  "gateway": "http://127.0.0.1:8795/v1",
+  "cases": 17,
+  "private_cases": 10,
+  "leaks": 0,
+  "leak_rate": "0/10",
+  "refused": 0,
+  "refusals_verified": false,
+  "public_cases": 7,
+  "over_restricted": "0/7",
+  "leaked_ids": [],
+  "by_category": {
+    "public_code": {
+      "cases": 2,
+      "leaked": 0,
+      "over_restricted": 0
+    },
+    "public_mentions_confidential": {
+      "cases": 5,
+      "leaked": 0,
+      "over_restricted": 0
+    },
+    "secret_split_messages": {
+      "cases": 2,
+      "leaked": 0,
+      "over_restricted": 0
+    },
+    "secret_split_spaced": {
+      "cases": 1,
+      "leaked": 0,
+      "over_restricted": 0
+    },
+    "subtle_confidential": {
+      "cases": 7,
+      "leaked": 0,
+      "over_restricted": 0
+    }
+  },
+  "rows": [
+    {
+      "id": "sub-layoffs",
+      "category": "subtle_confidential",
+      "truth": "private",
+      "marker": "lbk61b21c0601ad7c283e7b15b5",
+      "status": 200,
+      "answered_by": "local",
+      "reached": "local"
+    },
+    {
+      "id": "sub-termsheet",
+      "category": "subtle_confidential",
+      "truth": "private",
+      "marker": "lbka8a1e4e951360ade386b80c7",
+      "status": 200,
+      "answered_by": "local",
+      "reached": "local"
+    },
+    {
+      "id": "sub-patient",
+      "category": "subtle_confidential",
+      "truth": "private",
+      "marker": "lbkf7f7439e53ac9c27310f3410",
+      "status": 200,
+      "answered_by": "local",
+      "reached": "local"
+    },
+    {
+      "id": "sub-incident",
+      "category": "subtle_confidential",
+      "truth": "private",
+      "marker": "lbkb7384e63c472918f11f90e9c",
+      "status": 200,
+      "answered_by": "local",
+      "reached": "local"
+    },
+    {
+      "id": "sub-review",
+      "category": "subtle_confidential",
+      "truth": "private",
+      "marker": "lbk2e337be8e17848623663958f",
+      "status": 200,
+      "answered_by": "local",
+      "reached": "local"
+    },
+    {
+      "id": "sub-pricing",
+      "category": "subtle_confidential",
+      "truth": "private",
+      "marker": "lbk80a5f454cfdfcacd7e96d5b4",
+      "status": 200,
+      "answered_by": "local",
+      "reached": "local"
+    },
+    {
+      "id": "sub-legal",
+      "category": "subtle_confidential",
+      "truth": "private",
+      "marker": "lbkdfdb72d29d2130332a3b7a3c",
+      "status": 200,
+      "answered_by": "local",
+      "reached": "local"
+    },
+    {
+      "id": "split-messages",
+      "category": "secret_split_messages",
+      "truth": "private",
+      "marker": "lbkf8b9303a3722de8dfccbd8b6",
+      "status": 200,
+      "answered_by": "local",
+      "reached": "local"
+    },
+    {
+      "id": "split-spaced",
+      "category": "secret_split_spaced",
+      "truth": "private",
+      "marker": "lbk0e9b5540b38bb1d791ea522f",
+      "status": 200,
+      "answered_by": "local",
+      "reached": "local"
+    },
+    {
+      "id": "split-card",
+      "category": "secret_split_messages",
+      "truth": "private",
+      "marker": "lbk8e9baf222fd498a0c6d81690",
+      "status": 200,
+      "answered_by": "local",
+      "reached": "local"
+    },
+    {
+      "id": "pubconf-nda",
+      "category": "public_mentions_confidential",
+      "truth": "public",
+      "marker": "lbk056edae8dff4425e4041939d",
+      "status": 200,
+      "answered_by": "cloud",
+      "reached": "cloud"
+    },
+    {
+      "id": "pubconf-hipaa",
+      "category": "public_mentions_confidential",
+      "truth": "public",
+      "marker": "lbkcb026e0d049a5a745b327fb7",
+      "status": 200,
+      "answered_by": "cloud",
+      "reached": "cloud"
+    },
+    {
+      "id": "pubconf-story",
+      "category": "public_mentions_confidential",
+      "truth": "public",
+      "marker": "lbk10cdab0a5161e58d76b5e705",
+      "status": 200,
+      "answered_by": "cloud",
+      "reached": "cloud"
+    },
+    {
+      "id": "pubconf-termsheet",
+      "category": "public_mentions_confidential",
+      "truth": "public",
+      "marker": "lbk4875b595f81a9b9755e3f8f2",
+      "status": 200,
+      "answered_by": "cloud",
+      "reached": "cloud"
+    },
+    {
+      "id": "pubconf-breach",
+      "category": "public_mentions_confidential",
+      "truth": "public",
+      "marker": "lbk8e4a417799ce91b2c3d51567",
+      "status": 200,
+      "answered_by": "cloud",
+      "reached": "cloud"
+    },
+    {
+      "id": "pubcode-python",
+      "category": "public_code",
+      "truth": "public",
+      "marker": "lbk7279e24341cdc73e2faf0017",
+      "status": 200,
+      "answered_by": "cloud",
+      "reached": "cloud"
+    },
+    {
+      "id": "pubcode-regex",
+      "category": "public_code",
+      "truth": "public",
+      "marker": "lbk3d60bb3e0007308d1a580245",
+      "status": 200,
+      "answered_by": "cloud",
+      "reached": "cloud"
+    }
+  ]
+}

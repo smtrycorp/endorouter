@@ -4,6 +4,10 @@
 set -u
 cd "$(dirname "$0")/.."
 SR=.venv/bin/sovereign-router
+# a previous run's servers may still be shutting down: wait until every port this script uses is free
+for port in 8795 8796 8797 8798 8799 8800 8801; do
+  for i in $(seq 1 60); do lsof -iTCP:$port -sTCP:LISTEN >/dev/null 2>&1 || break; sleep 1; done
+done
 pids=()
 (cd bench && LITELLM_TELEMETRY=False .litellm-venv/bin/litellm --config litellm-leakbench.yaml --host 127.0.0.1 --port 8796 > litellm.log 2>&1) & pids+=($!)
 $SR serve -c bench/leakbench-strict.yaml --port 8797 > /dev/null 2>&1 & pids+=($!)
@@ -16,4 +20,4 @@ $SR leakbench --base-url http://127.0.0.1:8797/v1 > bench/result-strict.json; ec
 $SR leakbench --base-url http://127.0.0.1:8797/v1 --no-provenance > bench/result-strict-noprov.json; echo "strict-noprov exit $?"
 $SR leakbench --base-url http://127.0.0.1:8798/v1 > bench/result-control-passthrough.json; echo "control exit $?"
 $SR leakbench --base-url http://127.0.0.1:8795/v1 > bench/result-balanced.json; echo "balanced exit $?"
-pkill -f "litellm --config litellm-leakbench.yaml"; kill "${pids[@]}" 2>/dev/null
+pkill -f "litellm --config litellm-leakbench.yaml"; kill "${pids[@]}" 2>/dev/null; wait 2>/dev/null

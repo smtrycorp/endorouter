@@ -8,7 +8,7 @@
 |---|---|---|
 | sovereign-router 0.1, strict, with provenance headers | 0 of 24 | 3 of 5 |
 | sovereign-router 0.1, strict, no provenance headers | 0 of 24 | 5 of 5 |
-| sovereign-router 0.1, balanced, local 30B classifier | 0 of 24 | 1 of 5 (0 of 5 on an earlier run) |
+| sovereign-router 0.1, balanced, local 30B classifier | 0 of 24 | 0 of 5 (1 of 5 on one of three runs) |
 | LiteLLM 1.103.1, content filter on every request | 13 of 24 | 0 of 5 |
 | Pass-through control (cloud declared local) | 24 of 24 | 0 of 5 |
 
@@ -44,14 +44,29 @@ Each cell shows private cases leaked, or public cases kept off the cloud, out of
 
 ## Balanced mode
 
-In balanced mode, unlabelled work may go to the cloud when no detector fires and a local model classifies it as public. The classifier here was a 30B open-weight model, quantised to 4 bits, running on the same laptop (an M2 Max with 64 GB). We ran the suite twice, before and after the second review round.
+In balanced mode, unlabelled work may go to the cloud when no detector fires and a local model classifies it as public. The classifier here was a 30B open-weight model, quantised to 4 bits, running on the same laptop (an M2 Max with 64 GB). We ran the suite three times as the code changed.
 
-- **Private prompts.** In both runs, no private case reached the cloud. The classifier called all 5 confidential prose cases private.
-- **Unlabelled public prompts.** In both runs, the classifier cleared all 3 for the cloud.
-- **The flip.** A public-source request with no substance, "Explain what this README section means for a new user", was cleared in the first run and kept local in the second. The classifier may tighten any request, even one with public provenance, so a flip like this costs a cloud trip and never causes a leak.
+- **Private prompts.** In every run, no private case reached the cloud. The classifier called all 5 confidential prose cases private.
+- **Unlabelled public prompts.** In every run, the classifier cleared all 3 for the cloud.
+- **The flip.** A public-source request with no substance, "Explain what this README section means for a new user", was kept local in one run and cleared in the other two. The classifier may tighten any request, even one with public provenance, so a flip like this costs a cloud trip and never causes a leak.
 - **Latency.** Every unlabelled request waits for the classifier. The first run averaged about 9.5 seconds per request on that machine.
 
-The confidential cases in this suite are fairly plain. A harder suite, with subtle confidential text and public text that mentions confidentiality, is the next thing to build before claiming more.
+## The harder suite
+
+`cases-hard.jsonl` has 17 cases: 10 private and 7 public. It was built after the first results to test what the main suite made too easy.
+
+- **Confidential prose with no giveaway words.** There are 7 cases, such as layoff plans, a term sheet, a patient note and a legal strategy.
+- **Secrets split up.** One key is split across two messages, one is typed out letter by letter, and one card number is split across messages.
+- **Public prompts that mention confidentiality.** There are 5, such as NDA clauses, HIPAA definitions and a spy story.
+- **Ordinary public code questions.** There are 2.
+
+| Gateway | Private cases that reached the cloud | Public cases kept off the cloud |
+|---|---|---|
+| sovereign-router, strict | 0 of 10 | 7 of 7 |
+| sovereign-router, balanced, local 30B classifier | 0 of 10 | 0 of 7 |
+| LiteLLM 1.103.1, content filter | 10 of 10 | 1 of 7 (a keyword block on the NDA question) |
+
+**The first balanced run on this suite leaked 1 of 10.** It was the key split across two messages. No single string held a whole key, so no detector fired, and the classifier called the conversation public. We added two detector rules. The first flags a distinctive issuer prefix standing on its own, such as `AKIAIOSF`. The second rejoins text typed out letter by letter. The rerun above leaked none. The suite is still small, and it was written by the same authors as the router.
 
 ## How LiteLLM was configured
 
@@ -66,7 +81,7 @@ In this release that filter blocked on detection with HTTP 400 and did not rerou
 
 ## Reproduce
 
-`bench/run_all.sh` runs every configuration. Step by step:
+`bench/run_all.sh` runs every configuration on the main suite, and `bench/run_hard.sh` runs the harder suite. Step by step:
 
 ```
 python -m venv bench/.litellm-venv
