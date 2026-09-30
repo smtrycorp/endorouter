@@ -1,0 +1,26 @@
+# sovereign-router example config. Every field is checked; a typo is an error, never a silent default.
+version: 1
+mode: strict          # strict: unlabelled work stays local. balanced: the local classifier may clear it (logged as such).
+audit_log: sovereign-router.log.jsonl
+
+targets:              # in preference order
+  local:
+    url: http://127.0.0.1:11434/v1     # Ollama, LM Studio, llama.cpp, mlx-lm: any OpenAI-compatible local server
+    model: qwen2.5:14b
+    location: local                    # you declare this; see README on why localhost is not proof
+    capabilities: [chat, code]
+  cloud:
+    url: https://api.openai.com/v1
+    model: gpt-4o-mini
+    location: cloud
+    capabilities: [chat, code, reasoning]
+    api_key_env: OPENAI_API_KEY
+
+provenance:
+  public_sources: ["docs/public/**", "https://*"]
+  private_sources: ["**/.env*", ".env*", "clients/**", "**/secrets/**"]
+  trusted_clients: ["127.0.0.1", "::1"]
+
+classifier:
+  enabled: false
+  target: local

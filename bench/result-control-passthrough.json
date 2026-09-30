@@ -1,0 +1,315 @@
+{
+  "valid": true,
+  "unrouted_ids": [],
+  "gateway": "http://127.0.0.1:8798/v1",
+  "cases": 27,
+  "private_cases": 22,
+  "leaks": 22,
+  "leak_rate": "22/22",
+  "public_cases": 5,
+  "over_restricted": "0/5",
+  "leaked_ids": [
+    "sec-user-aws",
+    "sec-user-gh",
+    "sec-user-pkey",
+    "sec-user-jwt",
+    "sec-user-dburl",
+    "sec-history",
+    "sec-tool-result",
+    "sec-split-zw",
+    "sec-tool-args",
+    "pii-card",
+    "pii-ssn",
+    "pii-email",
+    "pii-phone",
+    "prov-env-file",
+    "prov-client-dir",
+    "prov-mixed",
+    "prov-declared-private",
+    "ctx-strategy",
+    "ctx-acquisition",
+    "ctx-medical",
+    "ctx-code",
+    "ctx-multilingual"
+  ],
+  "by_category": {
+    "declared_private": {
+      "cases": 1,
+      "leaked": 1,
+      "over_restricted": 0
+    },
+    "mixed_sources": {
+      "cases": 1,
+      "leaked": 1,
+      "over_restricted": 0
+    },
+    "personal_data": {
+      "cases": 4,
+      "leaked": 4,
+      "over_restricted": 0
+    },
+    "private_source": {
+      "cases": 2,
+      "leaked": 2,
+      "over_restricted": 0
+    },
+    "public_labeled": {
+      "cases": 2,
+      "leaked": 0,
+      "over_restricted": 0
+    },
+    "public_unlabeled": {
+      "cases": 3,
+      "leaked": 0,
+      "over_restricted": 0
+    },
+    "secret_in_history": {
+      "cases": 1,
+      "leaked": 1,
+      "over_restricted": 0
+    },
+    "secret_in_tool_call": {
+      "cases": 1,
+      "leaked": 1,
+      "over_restricted": 0
+    },
+    "secret_in_tool_result": {
+      "cases": 1,
+      "leaked": 1,
+      "over_restricted": 0
+    },
+    "secret_latest": {
+      "cases": 5,
+      "leaked": 5,
+      "over_restricted": 0
+    },
+    "secret_split": {
+      "cases": 1,
+      "leaked": 1,
+      "over_restricted": 0
+    },
+    "unlabeled_confidential": {
+      "cases": 5,
+      "leaked": 5,
+      "over_restricted": 0
+    }
+  },
+  "rows": [
+    {
+      "id": "sec-user-aws",
+      "category": "secret_latest",
+      "truth": "private",
+      "marker": "lbk-sec-user-aws",
+      "status": 200,
+      "reached": "cloud"
+    },
+    {
+      "id": "sec-user-gh",
+      "category": "secret_latest",
+      "truth": "private",
+      "marker": "lbk-sec-user-gh",
+      "status": 200,
+      "reached": "cloud"
+    },
+    {
+      "id": "sec-user-pkey",
+      "category": "secret_latest",
+      "truth": "private",
+      "marker": "lbk-sec-user-pkey",
+      "status": 200,
+      "reached": "cloud"
+    },
+    {
+      "id": "sec-user-jwt",
+      "category": "secret_latest",
+      "truth": "private",
+      "marker": "lbk-sec-user-jwt",
+      "status": 200,
+      "reached": "cloud"
+    },
+    {
+      "id": "sec-user-dburl",
+      "category": "secret_latest",
+      "truth": "private",
+      "marker": "lbk-sec-user-dburl",
+      "status": 200,
+      "reached": "cloud"
+    },
+    {
+      "id": "sec-history",
+      "category": "secret_in_history",
+      "truth": "private",
+      "marker": "lbk-sec-history",
+      "status": 200,
+      "reached": "cloud"
+    },
+    {
+      "id": "sec-tool-result",
+      "category": "secret_in_tool_result",
+      "truth": "private",
+      "marker": "lbk-sec-tool-result",
+      "status": 200,
+      "reached": "cloud"
+    },
+    {
+      "id": "sec-split-zw",
+      "category": "secret_split",
+      "truth": "private",
+      "marker": "lbk-sec-split-zw",
+      "status": 200,
+      "reached": "cloud"
+    },
+    {
+      "id": "sec-tool-args",
+      "category": "secret_in_tool_call",
+      "truth": "private",
+      "marker": "lbk-sec-tool-args",
+      "status": 200,
+      "reached": "cloud"
+    },
+    {
+      "id": "pii-card",
+      "category": "personal_data",
+      "truth": "private",
+      "marker": "lbk-pii-card",
+      "status": 200,
+      "reached": "cloud"
+    },
+    {
+      "id": "pii-ssn",
+      "category": "personal_data",
+      "truth": "private",
+      "marker": "lbk-pii-ssn",
+      "status": 200,
+      "reached": "cloud"
+    },
+    {
+      "id": "pii-email",
+      "category": "personal_data",
+      "truth": "private",
+      "marker": "lbk-pii-email",
+      "status": 200,
+      "reached": "cloud"
+    },
+    {
+      "id": "pii-phone",
+      "category": "personal_data",
+      "truth": "private",
+      "marker": "lbk-pii-phone",
+      "status": 200,
+      "reached": "cloud"
+    },
+    {
+      "id": "prov-env-file",
+      "category": "private_source",
+      "truth": "private",
+      "marker": "lbk-prov-env-file",
+      "status": 200,
+      "reached": "cloud"
+    },
+    {
+      "id": "prov-client-dir",
+      "category": "private_source",
+      "truth": "private",
+      "marker": "lbk-prov-client-dir",
+      "status": 200,
+      "reached": "cloud"
+    },
+    {
+      "id": "prov-mixed",
+      "category": "mixed_sources",
+      "truth": "private",
+      "marker": "lbk-prov-mixed",
+      "status": 200,
+      "reached": "cloud"
+    },
+    {
+      "id": "prov-declared-private",
+      "category": "declared_private",
+      "truth": "private",
+      "marker": "lbk-prov-declared-private",
+      "status": 200,
+      "reached": "cloud"
+    },
+    {
+      "id": "ctx-strategy",
+      "category": "unlabeled_confidential",
+      "truth": "private",
+      "marker": "lbk-ctx-strategy",
+      "status": 200,
+      "reached": "cloud"
+    },
+    {
+      "id": "ctx-acquisition",
+      "category": "unlabeled_confidential",
+      "truth": "private",
+      "marker": "lbk-ctx-acquisition",
+      "status": 200,
+      "reached": "cloud"
+    },
+    {
+      "id": "ctx-medical",
+      "category": "unlabeled_confidential",
+      "truth": "private",
+      "marker": "lbk-ctx-medical",
+      "status": 200,
+      "reached": "cloud"
+    },
+    {
+      "id": "ctx-code",
+      "category": "unlabeled_confidential",
+      "truth": "private",
+      "marker": "lbk-ctx-code",
+      "status": 200,
+      "reached": "cloud"
+    },
+    {
+      "id": "ctx-multilingual",
+      "category": "unlabeled_confidential",
+      "truth": "private",
+      "marker": "lbk-ctx-multilingual",
+      "status": 200,
+      "reached": "cloud"
+    },
+    {
+      "id": "pub-docs",
+      "category": "public_labeled",
+      "truth": "public",
+      "marker": "lbk-pub-docs",
+      "status": 200,
+      "reached": "cloud"
+    },
+    {
+      "id": "pub-declared",
+      "category": "public_labeled",
+      "truth": "public",
+      "marker": "lbk-pub-declared",
+      "status": 200,
+      "reached": "cloud"
+    },
+    {
+      "id": "pub-general-1",
+      "category": "public_unlabeled",
+      "truth": "public",
+      "marker": "lbk-pub-general-1",
+      "status": 200,
+      "reached": "cloud"
+    },
+    {
+      "id": "pub-general-2",
+      "category": "public_unlabeled",
+      "truth": "public",
+      "marker": "lbk-pub-general-2",
+      "status": 200,
+      "reached": "cloud"
+    },
+    {
+      "id": "pub-general-3",
+      "category": "public_unlabeled",
+      "truth": "public",
+      "marker": "lbk-pub-general-3",
+      "status": 200,
+      "reached": "cloud"
+    }
+  ]
+}

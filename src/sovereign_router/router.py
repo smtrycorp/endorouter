@@ -1,0 +1,139 @@
+"""The router: scan, classify, decide, audit, dispatch. Used by the HTTP server and usable directly as a library.
+
+Dispatch rules:
+  - only targets in the decision's permitted set are ever contacted, in preference order;
+  - a failed attempt (connection error, timeout, HTTP 5xx or 429) moves to the next permitted target, never outside the set;
+  - streaming is committed to one target before the first byte is returned; there is no mid-stream switch;
+  - the HTTP client follows no redirects and ignores proxy environment variables, so traffic goes only where configured.
+"""
+
+from __future__ import annotations
+
+import os
+import time
+import uuid
+from dataclasses import dataclass
+from typing import AsyncIterator, Sequence
+
+import httpx
+
+from . import POLICY_VERSION
+from .audit import AuditLog
+from .classifier import classify
+from .config import Config, Target
+from .detectors import Finding, scan_request
+from .labels import Label
+from .policy import Decision, decide, permitted_targets
+
+RETRYABLE = {429, 500, 502, 503, 504}
+
+
+class Refused(Exception):
+    def __init__(self, decision: Decision, request_id: str):
+        super().__init__(decision.error or "refused")
+        self.decision = decision
+        self.request_id = request_id
+
+
+class UpstreamFailed(Exception):
+    def __init__(self, request_id: str, attempts: list[dict]):
+        super().__init__("every permitted target failed")
+        self.request_id = request_id
+        self.attempts = attempts
+
+
+@dataclass
+class Routed:
+    request_id: str
+    decision: Decision
+    target: Target
+    response: httpx.Response  # open when streaming; caller closes
+
+
+def make_client() -> httpx.AsyncClient:
+    return httpx.AsyncClient(follow_redirects=False, trust_env=False)
+
+
+class Router:
+    def __init__(self, cfg: Config, client: httpx.AsyncClient | None = None, audit: AuditLog | None = None):
+        self.cfg = cfg
+        self.client = client or make_client()
+        self.audit = audit or AuditLog(cfg.audit_log)
+
+    async def plan(
+        self,
+        body: dict,
+        *,
+        sources: Sequence[str] = (),
+        declared: Label | None = None,
+        capability: str | None = None,
+    ) -> tuple[Decision, list[Finding]]:
+        findings = scan_request(body, extra=[(f"sources[{i}]", s) for i, s in enumerate(sources)])
+        verdict = await classify(self.cfg, body, self.client) if self.cfg.classifier.enabled else None
+        d = decide(
+            self.cfg,
+            requested_model=body.get("model"),
+            sources=sources,
+            declared=declared,
+            findings=findings,
+            classifier_verdict=verdict,
+            capability=capability,
+        )
+        return d, findings
+
+    async def route(
+        self,
+        body: dict,
+        *,
+        sources: Sequence[str] = (),
+        declared: Label | None = None,
+        capability: str | None = None,
+    ) -> Routed:
+        request_id = uuid.uuid4().hex[:16]
+        decision, _ = await self.plan(body, sources=sources, declared=declared, capability=capability)
+        # written and flushed before anything leaves; raises AuditError (the caller refuses) if the log is unwritable
+        self.audit.write({"event": "decision", "request_id": request_id, "mode": self.cfg.mode,
+                          "policy_version": POLICY_VERSION, **decision.as_record()})
+        if decision.selected is None:
+            raise Refused(decision, request_id)
+        attempts: list[dict] = []
+        stream = bool(body.get("stream"))
+        for target in permitted_targets(self.cfg, decision):
+            t0 = time.monotonic()
+            upstream = {**body, "model": target.model}
+            headers = {"content-type": "application/json"}
+            if target.api_key_env:
+                key = os.environ.get(target.api_key_env, "")
+                if key:
+                    headers["authorization"] = f"Bearer {key}"
+            try:
+                req = self.client.build_request("POST", f"{target.url}/chat/completions", json=upstream, headers=headers,
+                                                timeout=target.timeout_s)
+                resp = await self.client.send(req, stream=stream)
+            except httpx.HTTPError as e:
+                attempts.append({"target": target.name, "error": type(e).__name__, "ms": int((time.monotonic() - t0) * 1000)})
+                continue
+            if resp.status_code in RETRYABLE or 300 <= resp.status_code < 400:
+                attempts.append({"target": target.name, "status": resp.status_code, "ms": int((time.monotonic() - t0) * 1000)})
+                await resp.aclose()
+                continue
+            self.audit.write({"event": "dispatched", "request_id": request_id, "target": target.name,
+                              "location": target.location, "status": resp.status_code, "attempts": attempts,
+                              "ms": int((time.monotonic() - t0) * 1000)})
+            return Routed(request_id, decision, target, resp)
+        self.audit.write({"event": "failed", "request_id": request_id, "attempts": attempts})
+        raise UpstreamFailed(request_id, attempts)
+
+    async def aclose(self) -> None:
+        await self.client.aclose()
+
+
+async def iter_stream(resp: httpx.Response) -> AsyncIterator[bytes]:
+    try:
+        if resp.is_stream_consumed:  # a transport that pre-read the body (tests, some proxies): pass it through whole
+            yield resp.content
+        else:
+            async for chunk in resp.aiter_raw():
+                yield chunk
+    finally:
+        await resp.aclose()

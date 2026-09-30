@@ -1,0 +1,8 @@
+# Control: a gateway that sends everything to the cloud (what a router without a sovereignty policy does). leakbench must
+# report every private case as leaked; if it does not, the suite is broken.
+version: 1
+mode: strict
+audit_log: bench/leakbench-passthrough.log.jsonl
+targets:
+  cloud: {url: "http://127.0.0.1:8799/v1", model: fake-cloud, location: local}   # deliberately MISdeclared as local
+  local: {url: "http://127.0.0.1:8800/v1", model: fake-local, location: local}

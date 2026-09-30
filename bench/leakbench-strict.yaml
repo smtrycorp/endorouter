@@ -1,0 +1,9 @@
+version: 1
+mode: strict
+audit_log: bench/leakbench-strict.log.jsonl
+targets:
+  cloud: {url: "http://127.0.0.1:8799/v1", model: fake-cloud, location: cloud}
+  local: {url: "http://127.0.0.1:8800/v1", model: fake-local, location: local}
+provenance:
+  public_sources: ["docs/public/**"]
+  private_sources: ["**/.env*", ".env*", "clients/**"]
