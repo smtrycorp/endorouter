@@ -51,14 +51,16 @@ x-sovereign-label: public
 
 Only clients listed in `trusted_clients` can declare anything public. Any client can declare `private`.
 
-**Detectors check formats, not word lists.** They cover private keys, cloud and SaaS tokens, JWTs with a decodable header, credentials in URLs, Luhn-valid card numbers, US social security numbers, email addresses and phone numbers. They scan every field that is forwarded upstream: all messages including history, tool calls, tool results, tool definitions, stop sequences and response schemas. That includes dict keys and JSON carried inside strings. Before matching, the text is normalised and zero-width characters are stripped. Every pattern is bounded, so a large input scans in linear time.
+**Detectors check formats, not word lists.** They cover private keys, cloud and SaaS tokens, JWTs with a decodable header, credentials in URLs, card numbers with a valid issuer prefix, length and Luhn checksum, US social security numbers, email addresses and phone numbers. They scan every field that is forwarded upstream: all messages including history, tool calls, tool results, tool definitions, stop sequences and response schemas. That includes dict keys, numbers, and JSON carried inside strings. Before matching, text is NFKC-normalised, every invisible format character is removed, and common Cyrillic and Greek look-alike letters are mapped to Latin. Short base64 runs are decoded one level and scanned too. Structure nested too deeply to inspect counts as a finding. Every pattern is bounded, so a large input scans in linear time.
+
+What detectors cannot see: secrets split across messages, encrypted or compressed data, other encodings, and anything that is sensitive because of what it means rather than how it looks. That is the reason unlabelled work stays local by default.
 
 ## Guarantees
 
 These are enforced in code and pinned by tests.
 
 - A private or unknown request never selects a cloud target in strict mode. Asking for a cloud model by name is refused, not honoured.
-- If the local model is down, the request fails. It never falls back to the cloud.
+- If the local model is down, a private or unknown request fails. It never falls back to the cloud. A public request may fall back to any permitted target.
 - Fallback only moves between targets that were already permitted.
 - The audit record is flushed before dispatch. If the log cannot be written, the request is refused.
 - The audit log holds decisions and reasons, never prompt content.
@@ -71,7 +73,7 @@ These are enforced in code and pinned by tests.
 A router can only enforce what it is told, so this section matters more than the rest.
 
 - **Localhost is not proof of local inference.** Some local servers can proxy requests to a hosted model. If a target you declare `local` forwards to a cloud, this router cannot know. `sovereign-router doctor` reminds you of this for every local target.
-- **Provenance is only as good as the client that sends it.** Configure `trusted_clients` narrowly. If you put a reverse proxy on the same machine in front of the router, it must set `X-Forwarded-For`. Otherwise every caller arrives from 127.0.0.1 and counts as trusted.
+- **Provenance is only as good as the client that sends it.** Configure `trusted_clients` narrowly. The router ignores `X-Forwarded-For`, so no caller can borrow a trusted address. Behind a reverse proxy, the proxy is the peer, so list it in `trusted_clients` only if every caller behind it is trusted.
 - **Detectors catch formats, not meaning.** That is why the default is local. In balanced mode, unlabelled work can reach the cloud if the local classifier calls it public, and that is a judgement call you opt into.
 
 ## leakbench
@@ -82,7 +84,13 @@ leakbench measures whether private data reaches a cloud through any OpenAI-compa
 sovereign-router leakbench --base-url http://127.0.0.1:8787/v1
 ```
 
-Point the gateway's cloud destination at port 8799 and its local destination at 8800. A case that reaches neither is either a deliberate refusal (HTTP 400, 403 or 451), which counts as safe, or a routing failure, which makes the whole run invalid. A gateway that answers nothing must never score as one that leaks nothing.
+Point the gateway's cloud destination at port 8799 and its local destination at 8800. A gateway that answers nothing must never score as one that leaks nothing, so three checks make a run invalid:
+
+- A benign calibration request does not reach a sink. This means the gateway is down, misconfigured or missing credentials.
+- A case reaches no sink and was not refused with HTTP 400, 403 or 451.
+- A successful answer did not come from one of the recording sinks. This means the gateway has a destination leakbench cannot see.
+
+Each refusal's response text is kept in the report, so a reader can check it was a policy decision.
 
 Results from 2026-09-30 are in [bench/RESULTS.md](bench/RESULTS.md), with the commands to reproduce them.
 

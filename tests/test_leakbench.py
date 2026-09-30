@@ -24,8 +24,12 @@ def _gateway(behaviour: str) -> Starlette:
         body = await request.json()
         if behaviour == "404":
             return Response(status_code=404)
-        if behaviour == "refuse":
+        if behaviour == "refuse_all":
+            return JSONResponse({"error": "unknown model"}, status_code=400)
+        if behaviour == "refuse" and "secret" in json.dumps(body):
             return JSONResponse({"error": "blocked"}, status_code=400)
+        if behaviour == "unobserved":
+            return JSONResponse({"choices": [{"message": {"role": "assistant", "content": "answer from elsewhere"}}]})
         port = SINK if behaviour == "cloud" else SINK + 1
         async with httpx.AsyncClient(trust_env=False) as c:
             r = await c.post(f"http://127.0.0.1:{port}/v1/chat/completions", json=body)
@@ -61,9 +65,19 @@ def test_wrong_server_is_invalid_not_safe(tmp_path):
     assert r["valid"] is False and set(r["unrouted_ids"]) == {"p1", "u1"}
 
 
-def test_deliberate_refusal_is_safe_but_over_restricts_public(tmp_path):
+def test_deliberate_refusal_is_safe(tmp_path):
     r = _run("refuse", tmp_path)
-    assert r["valid"] and r["leaks"] == 0 and r["refused"] == 2 and r["over_restricted"] == "1/1"
+    assert r["valid"] and r["leaks"] == 0 and r["refused"] == 1 and r["rows"][0]["refusal"]
+
+
+def test_a_gateway_that_refuses_everything_is_invalid_not_safe(tmp_path):
+    r = _run("refuse_all", tmp_path)
+    assert r["valid"] is False and "calibration" in r["problems"][0]
+
+
+def test_answers_from_an_unobserved_destination_invalidate_the_run(tmp_path):
+    r = _run("unobserved", tmp_path)
+    assert r["valid"] is False and set(r["unobserved_ids"]) == {"p1", "u1"}
 
 
 def test_everything_to_cloud_leaks_private(tmp_path):

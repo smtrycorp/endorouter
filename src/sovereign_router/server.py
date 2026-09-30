@@ -20,7 +20,9 @@ from starlette.routing import Route
 from . import __version__
 from .audit import AuditError
 from .config import Config
+from .detectors import _table
 from .labels import Label
+from .policy import source_label
 from .router import Refused, Router, UpstreamFailed, iter_stream
 
 SUPPORTED_FIELDS = {
@@ -34,26 +36,40 @@ def _error(status: int, message: str, **extra) -> JSONResponse:
     return JSONResponse({"error": {"message": message, "type": "sovereign_router", **extra}}, status_code=status)
 
 
+ROLES = {"system", "developer", "user", "assistant", "tool"}
+MESSAGE_FIELDS = {"role", "content", "name", "tool_calls", "tool_call_id", "refusal"}
+
+
 def _validate(body) -> str | None:
+    """Strict shape check: anything this version does not understand is refused, never forwarded unexamined."""
     if not isinstance(body, dict):
         return "request body must be a JSON object"
     extra = set(body) - SUPPORTED_FIELDS
     if extra:
         return f"unsupported field(s) {sorted(extra)} (sovereign-router v0.1 supports text chat completions)"
+    if not isinstance(body.get("model", "auto"), str):
+        return "model must be a string"
     msgs = body.get("messages")
     if not isinstance(msgs, list) or not msgs:
         return "messages must be a non-empty list"
     for i, m in enumerate(msgs):
-        c = m.get("content") if isinstance(m, dict) else None
+        if not isinstance(m, dict) or m.get("role") not in ROLES:
+            return f"messages[{i}]: must be an object with a role in {sorted(ROLES)}"
+        if set(m) - MESSAGE_FIELDS:
+            return f"messages[{i}]: unsupported field(s) {sorted(set(m) - MESSAGE_FIELDS)}"
+        c = m.get("content")
         if isinstance(c, list):
             for p in c:
-                if not (isinstance(p, dict) and p.get("type") == "text"):
+                if not (isinstance(p, dict) and p.get("type") == "text" and isinstance(p.get("text"), str) and set(p) <= {"type", "text"}):
                     return f"messages[{i}]: only text content parts are supported in v0.1"
+        elif c is not None and not isinstance(c, str):
+            return f"messages[{i}]: content must be a string, null or a list of text parts"
     return None
 
 
 def create_app(cfg: Config, router: Router | None = None) -> Starlette:
     r = router or Router(cfg)
+    _table()  # build the detector normalisation table now, not on the first request
 
     async def chat(request: Request):
         try:
@@ -65,13 +81,25 @@ def create_app(cfg: Config, router: Router | None = None) -> Starlette:
             return _error(400, problem)
         peer = request.client.host if request.client else ""
         trusted = peer in cfg.provenance.trusted_clients
-        label = Label.parse(request.headers.get("x-sovereign-label"))
+        # every value of a repeated header counts: a later "private" can never be dropped in favour of an earlier "public"
+        try:
+            label = Label.parse_all(request.headers.getlist("x-sovereign-label"))
+        except ValueError as e:
+            return _error(400, f"x-sovereign-label: {e}")
         if not trusted and label is not Label.PRIVATE:
             label = None  # an untrusted caller cannot declare anything public
-        sources = [s for s in (request.headers.get("x-sovereign-sources") or "").split(",") if s.strip()] if trusted else []
-        capability = request.headers.get("x-sovereign-capability") or None
+        raw_sources = [s.strip() for v in request.headers.getlist("x-sovereign-sources") for s in v.split(",") if s.strip()]
+        if raw_sources and not trusted:
+            # an untrusted caller's sources could only lift a label, so they are ignored; but a source it says is
+            # private still tightens, which is always safe
+            label = Label.PRIVATE if any(source_label(s, cfg)[0] is Label.PRIVATE for s in raw_sources) else label
+            raw_sources = []
+        caps = request.headers.getlist("x-sovereign-capability")
+        if len(caps) > 1:
+            return _error(400, "x-sovereign-capability may be sent once")
+        capability = caps[0].strip() if caps and caps[0].strip() else None
         try:
-            routed = await r.route(body, sources=sources, declared=label, capability=capability)
+            routed = await r.route(body, sources=raw_sources, declared=label, capability=capability)
         except AuditError as e:
             return _error(503, str(e))
         except Refused as e:

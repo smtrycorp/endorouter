@@ -15,6 +15,21 @@ class Label(IntEnum):
         return max(labels, default=cls.UNKNOWN)
 
     @classmethod
+    def parse_all(cls, values: "list[str]") -> "Label | None":
+        """Every value of every header, comma-separated or repeated. One unrecognised token is an error (ValueError),
+        never silently ignored; valid tokens combine to the most restrictive."""
+        found: list[Label] = []
+        for raw in values:
+            for tok in raw.split(","):
+                if not tok.strip():
+                    continue
+                lab = cls.parse(tok)
+                if lab is None:
+                    raise ValueError(f"unrecognised label {tok.strip()[:32]!r}")
+                found.append(lab)
+        return cls.combine(*found) if found else None
+
+    @classmethod
     def parse(cls, value: str | None) -> "Label | None":
         if not value:
             return None

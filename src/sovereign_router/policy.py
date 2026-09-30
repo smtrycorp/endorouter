@@ -69,7 +69,20 @@ def canonical_source(source: str) -> str | None:
         host, sep, path = rest.partition("/")
         if "@" in host:
             return None
-        return f"{scheme.lower()}://{host.lower()}{sep}{path}"
+        # decode percent escapes and resolve dot segments, so /public/../private or /public/%2e%2e/private
+        # is matched where it actually points; a path that climbs above the root is not matchable
+        from urllib.parse import unquote
+
+        path, qmark, query = path.partition("?")
+        path = unquote(path)
+        if "\x00" in path or "\\" in path:
+            return None
+        if path:
+            resolved = posixpath.normpath("/" + path)
+            if resolved.startswith("//") or ".." in resolved.split("/"):
+                return None
+            path = resolved.lstrip("/") + ("/" if path.endswith("/") and resolved != "/" else "")
+        return f"{scheme.lower()}://{host.lower()}{sep}{path}{qmark}{query}"
     norm = posixpath.normpath(s.replace("\\", "/"))
     if norm == ".." or norm.startswith("../") or "/../" in norm:
         return None
@@ -133,15 +146,18 @@ def decide(
         reasons.append("local_only")
 
     if capability:
+        known = {c for t in cfg.targets for c in t.capabilities}
         allowed = [t for t in allowed if capability in t.capabilities]
-        reasons.append(f"capability:{capability}")
+        # only configured identifiers enter the audit log, never arbitrary request text
+        reasons.append(f"capability:{capability}" if capability in known else "capability:unrecognised")
 
     permitted = tuple(t.name for t in allowed)
     model = (requested_model or "auto").strip()
     if model not in ("", "auto"):
         t = cfg.target(model)
         if t is None:
-            return Decision(label, permitted, None, tuple(reasons), cleared, f"unknown target '{model}'")
+            return Decision(label, permitted, None, tuple(reasons + ["unknown_target"]), cleared,
+                            "the requested model is not a configured target (use 'auto' or a target name)")
         if t.name not in permitted:
             return Decision(label, permitted, None, tuple(reasons + ["requested_target_not_permitted"]), cleared,
                             f"target '{model}' is not permitted for a {label.name.lower()} request")

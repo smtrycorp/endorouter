@@ -21,11 +21,48 @@ class Finding:
     where: str  # e.g. "messages[3].content", "tools[0].function.parameters"
 
 
-_ZERO_WIDTH = re.compile(r"[\u200b-\u200f\u2060\ufeff]")
+# Latin look-alikes that NFKC leaves alone (Cyrillic and Greek). Mapped for scanning only; the request is never changed.
+_CONFUSABLES = {
+    "А": "A", "В": "B", "Е": "E", "К": "K", "М": "M", "Н": "H", "О": "O", "Р": "P", "С": "C", "Т": "T", "Х": "X",
+    "Ѕ": "S", "І": "I", "Ј": "J", "а": "a", "е": "e", "о": "o", "р": "p", "с": "c", "у": "y", "х": "x", "ѕ": "s",
+    "і": "i", "ј": "j", "Α": "A", "Β": "B", "Ε": "E", "Ζ": "Z", "Η": "H", "Ι": "I", "Κ": "K", "Μ": "M", "Ν": "N",
+    "Ο": "O", "Ρ": "P", "Τ": "T", "Υ": "Y", "Χ": "X", "ο": "o", "ν": "v",
+}
+_TABLE: dict[int, str | None] | None = None
+
+
+def _table() -> dict[int, str | None]:
+    """Every invisible format character (Unicode category Cf: zero-width, soft hyphen, invisible separators, bidi
+    controls, tag characters) is deleted and every listed confusable is mapped. Built once, applied in linear time."""
+    global _TABLE
+    if _TABLE is None:
+        t: dict[int, str | None] = {cp: None for cp in range(0x110000) if unicodedata.category(chr(cp)) == "Cf"}
+        t.update({ord(k): v for k, v in _CONFUSABLES.items()})
+        _TABLE = t
+    return _TABLE
 
 
 def normalise(text: str) -> str:
-    return _ZERO_WIDTH.sub("", unicodedata.normalize("NFKC", text))
+    return unicodedata.normalize("NFKC", text).translate(_table())
+
+
+_B64 = re.compile(r"(?<![A-Za-z0-9+/_\-])[A-Za-z0-9+/_\-]{16,4096}={0,2}")
+MAX_B64_CANDIDATES = 256
+
+
+def _decoded_base64(text: str) -> Iterator[str]:
+    """Bounded: at most MAX_B64_CANDIDATES runs of 16 to 4096 characters, one level deep, kept only when the decoded
+    bytes are mostly printable text. Enough to see a base64-wrapped key; not a general decoder."""
+    for i, m in enumerate(_B64.finditer(text)):
+        if i >= MAX_B64_CANDIDATES:
+            return
+        tok = m.group(0)
+        try:
+            raw = base64.b64decode(tok.replace("-", "+").replace("_", "/") + "=" * (-len(tok) % 4), validate=True)
+        except (ValueError, base64.binascii.Error):
+            continue
+        if raw and sum(32 <= b < 127 or b in (9, 10, 13) for b in raw) >= 0.9 * len(raw):
+            yield raw.decode("ascii", "ignore")
 
 
 def _luhn(digits: str) -> bool:
@@ -39,6 +76,23 @@ def _luhn(digits: str) -> bool:
         total += d
         alt = not alt
     return total % 10 == 0
+
+
+def _card(d: str) -> bool:
+    """Luhn plus a real issuer prefix and length, so a 13-digit millisecond timestamp is not a card."""
+    n = len(d)
+    if not 13 <= n <= 19 or not _luhn(d):
+        return False
+    p2, p3, p4 = int(d[:2]), int(d[:3]), int(d[:4])
+    return (
+        (d[0] == "4" and n in (13, 16, 19))                                  # Visa
+        or ((51 <= p2 <= 55 or 2221 <= p4 <= 2720) and n == 16)              # Mastercard
+        or (p2 in (34, 37) and n == 15)                                      # American Express
+        or ((p4 == 6011 or p2 == 65 or 644 <= p3 <= 649) and 16 <= n <= 19)  # Discover
+        or (3528 <= p4 <= 3589 and 16 <= n <= 19)                            # JCB
+        or ((300 <= p3 <= 305 or p2 in (36, 38, 39)) and 14 <= n <= 19)      # Diners Club
+        or (p2 == 62 and 16 <= n <= 19)                                      # UnionPay
+    )
 
 
 def _jwt(token: str) -> bool:
@@ -65,16 +119,17 @@ _RULES: list[tuple[str, re.Pattern, object]] = [
     ("google_api_key", re.compile(r"\bAIza[0-9A-Za-z_\-]{35}\b"), None),
     ("jwt", re.compile(r"\beyJ[A-Za-z0-9_\-]{8,4096}\.[A-Za-z0-9_\-]{8,8192}\.[A-Za-z0-9_\-]{8,4096}\b"), _jwt),
     ("credential_url", re.compile(r"\b[a-z][a-z0-9+.\-]{1,15}://[^\s:/@]{1,256}:[^\s@/]{1,256}@[^\s/]{1,256}"), None),
-    ("payment_card", re.compile(r"\b(?:\d[ -]?){13,19}\b"), lambda m: _luhn(re.sub(r"\D", "", m)) and 13 <= len(re.sub(r"\D", "", m)) <= 19),
+    ("payment_card", re.compile(r"\b(?:\d[ -]?){13,19}\b"), lambda m: _card(re.sub(r"\D", "", m))),
     ("us_ssn", re.compile(r"\b(?!000|666|9\d\d)\d{3}-(?!00)\d{2}-(?!0000)\d{4}\b"), None),
     ("email_address", re.compile(r"\b[A-Za-z0-9._%+\-]{1,64}@[A-Za-z0-9.\-]{1,253}\.[A-Za-z]{2,24}\b"), None),
     # not inside a hyphen-joined token (e.g. the digit runs of a Slack token), where a phone number never sits
-    ("phone_number", re.compile(r"(?<![\w\-])\+?\d{1,3}[ .\-]?\(?\d{2,4}\)?[ .\-]?\d{3,4}[ .\-]?\d{3,4}(?![\w\-])"), None),
+    # and never a bare digit run without a leading +: timestamps and ids look exactly like that
+    ("phone_number", re.compile(r"(?<![\w\-])\+?\d{1,3}[ .\-]?\(?\d{2,4}\)?[ .\-]?\d{3,4}[ .\-]?\d{3,4}(?![\w\-])"),
+     lambda m: m.startswith("+") or bool(re.search(r"[ .\-()]", m))),
 ]
 
 
-def scan_text(text: str, where: str) -> Iterator[Finding]:
-    t = normalise(text)
+def _scan_normalised(t: str, where: str) -> Iterator[Finding]:
     for rule, pat, check in _RULES:
         for m in pat.finditer(t):
             if check is None or check(m.group(0)):
@@ -82,29 +137,69 @@ def scan_text(text: str, where: str) -> Iterator[Finding]:
                 break
 
 
+def scan_text(text: str, where: str) -> Iterator[Finding]:
+    t = normalise(text)
+    seen = set()
+    for f in _scan_normalised(t, where):
+        seen.add(f.rule)
+        yield f
+    for decoded in _decoded_base64(t):
+        for f in _scan_normalised(normalise(decoded), f"{where}<base64>"):
+            if f.rule not in seen:
+                seen.add(f.rule)
+                yield f
+
+
+class _Undecodable(str):
+    """A JSON string nested too deeply to decode: it cannot be inspected, so it is treated as a finding."""
+
+
+MAX_DEPTH = 64
+
+
 def _walk(obj, where: str) -> Iterator[tuple[str, str]]:
-    if isinstance(obj, str):
-        yield where, obj
-        # tool-call arguments and similar fields are JSON inside a string: scan the decoded form too, so a secret
-        # written with JSON escapes (\u0041KIA...) is seen the way the model will read it
-        if obj[:1] in "{[" and len(obj) < 1_000_000:
-            try:
-                decoded = json.loads(obj)
-            except ValueError:
-                decoded = None
-            if isinstance(decoded, (dict, list)):
-                yield from _walk(decoded, f"{where}<json>")
-    elif isinstance(obj, dict):
-        for k, v in obj.items():
-            if isinstance(k, str):
-                yield f"{where}.<key>", k
-            yield from _walk(v, f"{where}.{k}")
-    elif isinstance(obj, list):
-        for i, v in enumerate(obj):
-            yield from _walk(v, f"{where}[{i}]")
+    """Iterative, so no input can exhaust the stack. Structure deeper than MAX_DEPTH cannot be inspected and is reported
+    as undecodable, which the scanner treats as a finding (fail closed)."""
+    stack = [(obj, where, 0)]
+    while stack:
+        o, w, depth = stack.pop()
+        if depth > MAX_DEPTH:
+            yield w, _Undecodable("")
+            continue
+        if isinstance(o, str):
+            yield w, o
+            # tool-call arguments and similar fields are JSON inside a string: scan the decoded form too, so a
+            # secret written with JSON escapes (\u0041KIA...) is seen the way the model will read it
+            if o.lstrip()[:1] in ("{", "["):
+                try:
+                    decoded = json.loads(o)
+                except ValueError:
+                    decoded = None
+                except RecursionError:
+                    yield f"{w}<json>", _Undecodable("")
+                    continue
+                if isinstance(decoded, (dict, list)):
+                    stack.append((decoded, f"{w}<json>", depth + 1))
+        elif isinstance(o, bool) or o is None:
+            continue
+        elif isinstance(o, (int, float)):
+            yield w, repr(o) if isinstance(o, float) else str(o)
+        elif isinstance(o, dict):
+            for k, v in o.items():
+                if isinstance(k, str):
+                    yield f"{w}.<key>", k
+                stack.append((v, f"{w}.{k}", depth + 1))
+        elif isinstance(o, list):
+            for i, v in enumerate(o):
+                stack.append((v, f"{w}[{i}]", depth + 1))
 
 
 def texts_in_request(body: dict) -> Iterator[tuple[str, str]]:
+    """The forwarded text, for readers such as the classifier (undecodable markers left out)."""
+    return ((w, t) for w, t in _texts(body) if not isinstance(t, _Undecodable))
+
+
+def _texts(body: dict) -> Iterator[tuple[str, str]]:
     """Every string the upstream model would receive: every field of the body except the model name, which the router
     replaces. That covers messages of every role, content parts, tool calls and results, tools, stop sequences,
     response_format schemas and the user field, including dict keys and JSON carried inside strings."""
@@ -116,6 +211,9 @@ def texts_in_request(body: dict) -> Iterator[tuple[str, str]]:
 
 def scan_request(body: dict, extra: Iterable[tuple[str, str]] = ()) -> list[Finding]:
     found: list[Finding] = []
-    for where, text in list(texts_in_request(body)) + list(extra):
+    for where, text in list(_texts(body)) + list(extra):
+        if isinstance(text, _Undecodable):
+            found.append(Finding("undecodable_nested_json", where))
+            continue
         found.extend(scan_text(text, where))
     return found

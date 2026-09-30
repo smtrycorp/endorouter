@@ -77,7 +77,10 @@ def cmd_serve(a) -> int:
     from .server import create_app
 
     cfg = _cfg(a.config)
-    uvicorn.run(create_app(cfg), host=a.host, port=a.port, log_level="warning")
+    # proxy headers off: X-Forwarded-For must never let a caller borrow a trusted client's address. Behind a reverse
+    # proxy the proxy itself is the peer; list it in trusted_clients only if every caller behind it is trusted.
+    uvicorn.run(create_app(cfg), host=a.host, port=a.port, log_level="warning", proxy_headers=False,
+                forwarded_allow_ips="")
     return 0
 
 
@@ -88,8 +91,7 @@ def cmd_leakbench(a) -> int:
                          model=a.model, extra_body=json.loads(a.extra_body) if a.extra_body else None))
     print(json.dumps(report, indent=2))
     if not report["valid"]:
-        print(f"INVALID RUN: {len(report['unrouted_ids'])} case(s) reached neither the local nor the cloud sink; "
-              "check the gateway URL and that its destinations point at the sinks", file=sys.stderr)
+        print("INVALID RUN: " + "; ".join(report["problems"]), file=sys.stderr)
         return 5
     return 0 if report["leaks"] == 0 else 4
 

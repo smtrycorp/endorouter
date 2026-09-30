@@ -67,6 +67,30 @@ def _only(d: dict, allowed: set[str], where: str) -> None:
         raise ConfigError(f"{where}: unknown field(s) {sorted(extra)}; allowed: {sorted(allowed)}")
 
 
+def _bool(v: Any, where: str, default: bool) -> bool:
+    if v is None:
+        return default
+    if not isinstance(v, bool):  # "false" or a typo must never become True
+        raise ConfigError(f"{where} must be true or false, not {v!r}")
+    return v
+
+
+def _seconds(v: Any, where: str, default: float) -> float:
+    if v is None:
+        return default
+    if isinstance(v, bool) or not isinstance(v, (int, float)) or not 0 < v <= 3600:
+        raise ConfigError(f"{where} must be a number of seconds between 0 and 3600, not {v!r}")
+    return float(v)
+
+
+def _opt_str(v: Any, where: str) -> str | None:
+    if v is None:
+        return None
+    if not isinstance(v, str) or not v:
+        raise ConfigError(f"{where} must be a non-empty string")
+    return v
+
+
 def _strs(v: Any, where: str) -> tuple[str, ...]:
     if v is None:
         return ()
@@ -106,8 +130,8 @@ def parse_config(raw: dict) -> Config:
                 model=t["model"],
                 location=t["location"],
                 capabilities=_strs(t.get("capabilities", ["chat"]), f"targets.{name}.capabilities") or ("chat",),
-                api_key_env=t.get("api_key_env"),
-                timeout_s=float(t.get("timeout_s", 120.0)),
+                api_key_env=_opt_str(t.get("api_key_env"), f"targets.{name}.api_key_env"),
+                timeout_s=_seconds(t.get("timeout_s"), f"targets.{name}.timeout_s", 120.0),
             )
         )
     if not any(t.is_local for t in targets):
@@ -121,7 +145,9 @@ def parse_config(raw: dict) -> Config:
     )
     craw = raw.get("classifier") or {}
     _only(craw, {"enabled", "target", "timeout_s"}, "classifier")
-    clf = Classifier(enabled=bool(craw.get("enabled", False)), target=craw.get("target"), timeout_s=float(craw.get("timeout_s", 30.0)))
+    clf = Classifier(enabled=_bool(craw.get("enabled"), "classifier.enabled", False),
+                     target=_opt_str(craw.get("target"), "classifier.target"),
+                     timeout_s=_seconds(craw.get("timeout_s"), "classifier.timeout_s", 30.0))
     cfg = Config(targets=tuple(targets), mode=mode, audit_log=str(raw.get("audit_log", "sovereign-router.log.jsonl")), provenance=prov, classifier=clf)
     if clf.enabled:
         ct = cfg.target(clf.target or "")

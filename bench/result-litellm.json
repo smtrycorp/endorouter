@@ -1,6 +1,8 @@
 {
   "valid": true,
+  "problems": [],
   "unrouted_ids": [],
+  "unobserved_ids": [],
   "gateway": "http://127.0.0.1:8796/v1",
   "cases": 29,
   "private_cases": 24,
@@ -98,6 +100,8 @@
       "truth": "private",
       "marker": "lbk-sec-user-aws",
       "status": 400,
+      "answered_by": null,
+      "refusal": "{\"error\":{\"message\":\"Content blocked: aws_access_key pattern detected\",\"type\":\"invalid_request_error\",\"param\":null,\"code\":\"400\",\"provider_specific_fields\":{\"error\":\"Content blocked: aws_access_key pat",
       "reached": "refused"
     },
     {
@@ -106,6 +110,8 @@
       "truth": "private",
       "marker": "lbk-sec-user-gh",
       "status": 400,
+      "answered_by": null,
+      "refusal": "{\"error\":{\"message\":\"Content blocked: github_token pattern detected\",\"type\":\"invalid_request_error\",\"param\":null,\"code\":\"400\",\"provider_specific_fields\":{\"error\":\"Content blocked: github_token pattern",
       "reached": "refused"
     },
     {
@@ -114,6 +120,7 @@
       "truth": "private",
       "marker": "lbk-sec-user-pkey",
       "status": 200,
+      "answered_by": "cloud",
       "reached": "cloud"
     },
     {
@@ -122,6 +129,8 @@
       "truth": "private",
       "marker": "lbk-sec-user-jwt",
       "status": 400,
+      "answered_by": null,
+      "refusal": "{\"error\":{\"message\":\"Content blocked: aws_secret_key pattern detected\",\"type\":\"invalid_request_error\",\"param\":null,\"code\":\"400\",\"provider_specific_fields\":{\"error\":\"Content blocked: aws_secret_key pat",
       "reached": "refused"
     },
     {
@@ -130,6 +139,8 @@
       "truth": "private",
       "marker": "lbk-sec-user-dburl",
       "status": 400,
+      "answered_by": null,
+      "refusal": "{\"error\":{\"message\":\"Content blocked: email pattern detected\",\"type\":\"invalid_request_error\",\"param\":null,\"code\":\"400\",\"provider_specific_fields\":{\"error\":\"Content blocked: email pattern detected\",\"pa",
       "reached": "refused"
     },
     {
@@ -138,6 +149,7 @@
       "truth": "private",
       "marker": "lbk-fmt-stripe",
       "status": 200,
+      "answered_by": "cloud",
       "reached": "cloud"
     },
     {
@@ -146,6 +158,7 @@
       "truth": "private",
       "marker": "lbk-fmt-openai",
       "status": 200,
+      "answered_by": "cloud",
       "reached": "cloud"
     },
     {
@@ -154,6 +167,8 @@
       "truth": "private",
       "marker": "lbk-sec-history",
       "status": 400,
+      "answered_by": null,
+      "refusal": "{\"error\":{\"message\":\"Content blocked: aws_access_key pattern detected\",\"type\":\"invalid_request_error\",\"param\":null,\"code\":\"400\",\"provider_specific_fields\":{\"error\":\"Content blocked: aws_access_key pat",
       "reached": "refused"
     },
     {
@@ -162,6 +177,8 @@
       "truth": "private",
       "marker": "lbk-sec-tool-result",
       "status": 400,
+      "answered_by": null,
+      "refusal": "{\"error\":{\"message\":\"Content blocked: slack_token pattern detected\",\"type\":\"invalid_request_error\",\"param\":null,\"code\":\"400\",\"provider_specific_fields\":{\"error\":\"Content blocked: slack_token pattern d",
       "reached": "refused"
     },
     {
@@ -170,6 +187,7 @@
       "truth": "private",
       "marker": "lbk-sec-split-zw",
       "status": 200,
+      "answered_by": "cloud",
       "reached": "cloud"
     },
     {
@@ -178,6 +196,8 @@
       "truth": "private",
       "marker": "lbk-sec-tool-args",
       "status": 400,
+      "answered_by": null,
+      "refusal": "{\"error\":{\"message\":\"Content blocked: github_token pattern detected\",\"type\":\"invalid_request_error\",\"param\":null,\"code\":\"400\",\"provider_specific_fields\":{\"error\":\"Content blocked: github_token pattern",
       "reached": "refused"
     },
     {
@@ -186,6 +206,8 @@
       "truth": "private",
       "marker": "lbk-pii-card",
       "status": 400,
+      "answered_by": null,
+      "refusal": "{\"error\":{\"message\":\"Content blocked: credit_card pattern detected\",\"type\":\"invalid_request_error\",\"param\":null,\"code\":\"400\",\"provider_specific_fields\":{\"error\":\"Content blocked: credit_card pattern d",
       "reached": "refused"
     },
     {
@@ -194,6 +216,8 @@
       "truth": "private",
       "marker": "lbk-pii-ssn",
       "status": 400,
+      "answered_by": null,
+      "refusal": "{\"error\":{\"message\":\"Content blocked: us_ssn pattern detected\",\"type\":\"invalid_request_error\",\"param\":null,\"code\":\"400\",\"provider_specific_fields\":{\"error\":\"Content blocked: us_ssn pattern detected\",\"",
       "reached": "refused"
     },
     {
@@ -202,6 +226,8 @@
       "truth": "private",
       "marker": "lbk-pii-email",
       "status": 400,
+      "answered_by": null,
+      "refusal": "{\"error\":{\"message\":\"Content blocked: email pattern detected\",\"type\":\"invalid_request_error\",\"param\":null,\"code\":\"400\",\"provider_specific_fields\":{\"error\":\"Content blocked: email pattern detected\",\"pa",
       "reached": "refused"
     },
     {
@@ -210,6 +236,8 @@
       "truth": "private",
       "marker": "lbk-pii-phone",
       "status": 400,
+      "answered_by": null,
+      "refusal": "{\"error\":{\"message\":\"Content blocked: us_phone pattern detected\",\"type\":\"invalid_request_error\",\"param\":null,\"code\":\"400\",\"provider_specific_fields\":{\"error\":\"Content blocked: us_phone pattern detecte",
       "reached": "refused"
     },
     {
@@ -218,6 +246,7 @@
       "truth": "private",
       "marker": "lbk-prov-env-file",
       "status": 200,
+      "answered_by": "cloud",
       "reached": "cloud"
     },
     {
@@ -226,6 +255,7 @@
       "truth": "private",
       "marker": "lbk-prov-client-dir",
       "status": 200,
+      "answered_by": "cloud",
       "reached": "cloud"
     },
     {
@@ -234,6 +264,7 @@
       "truth": "private",
       "marker": "lbk-prov-mixed",
       "status": 200,
+      "answered_by": "cloud",
       "reached": "cloud"
     },
     {
@@ -242,6 +273,7 @@
       "truth": "private",
       "marker": "lbk-prov-declared-private",
       "status": 200,
+      "answered_by": "cloud",
       "reached": "cloud"
     },
     {
@@ -250,6 +282,7 @@
       "truth": "private",
       "marker": "lbk-ctx-strategy",
       "status": 200,
+      "answered_by": "cloud",
       "reached": "cloud"
     },
     {
@@ -258,6 +291,7 @@
       "truth": "private",
       "marker": "lbk-ctx-acquisition",
       "status": 200,
+      "answered_by": "cloud",
       "reached": "cloud"
     },
     {
@@ -266,6 +300,7 @@
       "truth": "private",
       "marker": "lbk-ctx-medical",
       "status": 200,
+      "answered_by": "cloud",
       "reached": "cloud"
     },
     {
@@ -274,6 +309,7 @@
       "truth": "private",
       "marker": "lbk-ctx-code",
       "status": 200,
+      "answered_by": "cloud",
       "reached": "cloud"
     },
     {
@@ -282,6 +318,7 @@
       "truth": "private",
       "marker": "lbk-ctx-multilingual",
       "status": 200,
+      "answered_by": "cloud",
       "reached": "cloud"
     },
     {
@@ -290,6 +327,7 @@
       "truth": "public",
       "marker": "lbk-pub-docs",
       "status": 200,
+      "answered_by": "cloud",
       "reached": "cloud"
     },
     {
@@ -298,6 +336,7 @@
       "truth": "public",
       "marker": "lbk-pub-declared",
       "status": 200,
+      "answered_by": "cloud",
       "reached": "cloud"
     },
     {
@@ -306,6 +345,7 @@
       "truth": "public",
       "marker": "lbk-pub-general-1",
       "status": 200,
+      "answered_by": "cloud",
       "reached": "cloud"
     },
     {
@@ -314,6 +354,7 @@
       "truth": "public",
       "marker": "lbk-pub-general-2",
       "status": 200,
+      "answered_by": "cloud",
       "reached": "cloud"
     },
     {
@@ -322,6 +363,7 @@
       "truth": "public",
       "marker": "lbk-pub-general-3",
       "status": 200,
+      "answered_by": "cloud",
       "reached": "cloud"
     }
   ]

@@ -12,6 +12,11 @@ A case that reached neither sink counts as REFUSED only when the gateway answere
 451): that is safe for private data and over-restriction for public data. Anything else that reached no sink (connection
 error, 404, 5xx) means the case was never routed, and the whole run is INVALID, because a gateway that answers nothing
 trivially leaks nothing.
+
+Two more checks keep a broken setup from passing. First, a benign CALIBRATION request must reach a sink before any case
+counts, so a gateway that answers every request with "unknown model" or "missing API key" is invalid, not safe. Second,
+every successful answer must come from one of the recording sinks: an answer from anywhere else means the gateway has a
+destination leakbench cannot see, so the run is invalid.
 """
 
 from __future__ import annotations
@@ -71,6 +76,18 @@ def _marked(case: dict, model: str | None = None) -> tuple[dict, str]:
     return {"model": model or case.get("model", "auto"), "messages": msgs, **({"tools": case["tools"]} if case.get("tools") else {})}, marker
 
 
+CALIBRATION = {"id": "calibration", "category": "calibration", "truth": "public",
+               "messages": [{"role": "user", "content": "What is the capital of France?"}]}
+
+
+def _answered_by(text: str) -> str:
+    if "ok from fake-cloud" in text:
+        return "cloud"
+    if "ok from fake-local" in text:
+        return "local"
+    return "unobserved"
+
+
 async def run(base_url: str, cases_path: str | None = None, *, sink_port: int = 8799, sources_header: bool = True,
               model: str | None = None, extra_body: dict | None = None) -> dict:
     cases = load_cases(cases_path)
@@ -78,10 +95,10 @@ async def run(base_url: str, cases_path: str | None = None, *, sink_port: int = 
     local_seen: list[str] = []
     cloud = await _serve(_fake_openai("fake-cloud", cloud_seen), sink_port)
     local = await _serve(_fake_openai("fake-local", local_seen), sink_port + 1)
-    rows = []
+    rows: list[dict] = []
     try:
         async with httpx.AsyncClient(timeout=60, trust_env=False) as client:
-            for c in cases:
+            for c in [CALIBRATION, *cases]:
                 body, marker = _marked(c, model)
                 if extra_body:
                     body.update(json.loads(json.dumps(extra_body).replace("{id}", c["id"])))
@@ -90,18 +107,25 @@ async def run(base_url: str, cases_path: str | None = None, *, sink_port: int = 
                     headers["x-sovereign-sources"] = ",".join(c["sources"])
                 if sources_header and c.get("label"):
                     headers["x-sovereign-label"] = c["label"]
+                text = ""
                 try:
                     r = await client.post(f"{base_url.rstrip('/')}/chat/completions", json=body, headers=headers)
-                    status = r.status_code
+                    status, text = r.status_code, r.text
                 except httpx.HTTPError as e:
                     status = f"error:{type(e).__name__}"
-                rows.append({"id": c["id"], "category": c["category"], "truth": c["truth"], "marker": marker, "status": status})
+                row = {"id": c["id"], "category": c["category"], "truth": c["truth"], "marker": marker, "status": status,
+                       "answered_by": _answered_by(text) if status == 200 else None}
+                if status in REFUSAL_STATUSES:
+                    row["refusal"] = text[:200]  # so a reader can check each refusal is a policy decision
+                rows.append(row)
     finally:
         cloud.should_exit = True
         local.should_exit = True
         await asyncio.sleep(0.1)
 
     cloud_blob, local_blob = "\n".join(cloud_seen), "\n".join(local_seen)
+    calib = rows.pop(0)
+    calib_ok = calib["marker"] in cloud_blob or calib["marker"] in local_blob
     by_cat: dict[str, dict] = defaultdict(lambda: {"cases": 0, "leaked": 0, "over_restricted": 0})
     leaks, over, private_n, public_n = [], [], 0, 0
     for row in rows:
@@ -128,9 +152,20 @@ async def run(base_url: str, cases_path: str | None = None, *, sink_port: int = 
                 cat["over_restricted"] += 1
     # Never routed (gateway down, wrong URL, server error): the run is INVALID rather than a pass.
     unrouted = [r["id"] for r in rows if r["reached"] == "none"]
+    unobserved = [r["id"] for r in rows if r["answered_by"] == "unobserved"]
+    problems = []
+    if not calib_ok:
+        problems.append(f"calibration request did not reach a sink (status {calib['status']}): the gateway is not "
+                        "operational or not wired to the sinks, so its refusals mean nothing")
+    if unrouted:
+        problems.append(f"{len(unrouted)} case(s) reached no sink and were not refused")
+    if unobserved:
+        problems.append(f"{len(unobserved)} answer(s) came from a destination leakbench does not observe")
     return {
-        "valid": not unrouted,
+        "valid": not problems,
+        "problems": problems,
         "unrouted_ids": unrouted,
+        "unobserved_ids": unobserved,
         "gateway": base_url,
         "cases": len(rows),
         "private_cases": private_n,

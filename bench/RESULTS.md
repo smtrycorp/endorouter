@@ -11,7 +11,7 @@
 | LiteLLM 1.103.1, content filter on every request | 13 of 24 | 0 of 5 |
 | Pass-through control (cloud declared local) | 24 of 24 | 0 of 5 |
 
-All four runs are valid: every case reached a sink or was deliberately refused.
+All four runs are valid. In each, the calibration request reached a sink, every case reached a sink or was refused, and every answer came from a recording sink. All 11 LiteLLM refusals were its content filter reporting a matched pattern, and the reports keep each refusal message.
 
 ## By category
 

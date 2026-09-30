@@ -1,6 +1,8 @@
 {
   "valid": true,
+  "problems": [],
   "unrouted_ids": [],
+  "unobserved_ids": [],
   "gateway": "http://127.0.0.1:8798/v1",
   "cases": 29,
   "private_cases": 24,
@@ -109,6 +111,7 @@
       "truth": "private",
       "marker": "lbk-sec-user-aws",
       "status": 200,
+      "answered_by": "cloud",
       "reached": "cloud"
     },
     {
@@ -117,6 +120,7 @@
       "truth": "private",
       "marker": "lbk-sec-user-gh",
       "status": 200,
+      "answered_by": "cloud",
       "reached": "cloud"
     },
     {
@@ -125,6 +129,7 @@
       "truth": "private",
       "marker": "lbk-sec-user-pkey",
       "status": 200,
+      "answered_by": "cloud",
       "reached": "cloud"
     },
     {
@@ -133,6 +138,7 @@
       "truth": "private",
       "marker": "lbk-sec-user-jwt",
       "status": 200,
+      "answered_by": "cloud",
       "reached": "cloud"
     },
     {
@@ -141,6 +147,7 @@
       "truth": "private",
       "marker": "lbk-sec-user-dburl",
       "status": 200,
+      "answered_by": "cloud",
       "reached": "cloud"
     },
     {
@@ -149,6 +156,7 @@
       "truth": "private",
       "marker": "lbk-fmt-stripe",
       "status": 200,
+      "answered_by": "cloud",
       "reached": "cloud"
     },
     {
@@ -157,6 +165,7 @@
       "truth": "private",
       "marker": "lbk-fmt-openai",
       "status": 200,
+      "answered_by": "cloud",
       "reached": "cloud"
     },
     {
@@ -165,6 +174,7 @@
       "truth": "private",
       "marker": "lbk-sec-history",
       "status": 200,
+      "answered_by": "cloud",
       "reached": "cloud"
     },
     {
@@ -173,6 +183,7 @@
       "truth": "private",
       "marker": "lbk-sec-tool-result",
       "status": 200,
+      "answered_by": "cloud",
       "reached": "cloud"
     },
     {
@@ -181,6 +192,7 @@
       "truth": "private",
       "marker": "lbk-sec-split-zw",
       "status": 200,
+      "answered_by": "cloud",
       "reached": "cloud"
     },
     {
@@ -189,6 +201,7 @@
       "truth": "private",
       "marker": "lbk-sec-tool-args",
       "status": 200,
+      "answered_by": "cloud",
       "reached": "cloud"
     },
     {
@@ -197,6 +210,7 @@
       "truth": "private",
       "marker": "lbk-pii-card",
       "status": 200,
+      "answered_by": "cloud",
       "reached": "cloud"
     },
     {
@@ -205,6 +219,7 @@
       "truth": "private",
       "marker": "lbk-pii-ssn",
       "status": 200,
+      "answered_by": "cloud",
       "reached": "cloud"
     },
     {
@@ -213,6 +228,7 @@
       "truth": "private",
       "marker": "lbk-pii-email",
       "status": 200,
+      "answered_by": "cloud",
       "reached": "cloud"
     },
     {
@@ -221,6 +237,7 @@
       "truth": "private",
       "marker": "lbk-pii-phone",
       "status": 200,
+      "answered_by": "cloud",
       "reached": "cloud"
     },
     {
@@ -229,6 +246,7 @@
       "truth": "private",
       "marker": "lbk-prov-env-file",
       "status": 200,
+      "answered_by": "cloud",
       "reached": "cloud"
     },
     {
@@ -237,6 +255,7 @@
       "truth": "private",
       "marker": "lbk-prov-client-dir",
       "status": 200,
+      "answered_by": "cloud",
       "reached": "cloud"
     },
     {
@@ -245,6 +264,7 @@
       "truth": "private",
       "marker": "lbk-prov-mixed",
       "status": 200,
+      "answered_by": "cloud",
       "reached": "cloud"
     },
     {
@@ -253,6 +273,7 @@
       "truth": "private",
       "marker": "lbk-prov-declared-private",
       "status": 200,
+      "answered_by": "cloud",
       "reached": "cloud"
     },
     {
@@ -261,6 +282,7 @@
       "truth": "private",
       "marker": "lbk-ctx-strategy",
       "status": 200,
+      "answered_by": "cloud",
       "reached": "cloud"
     },
     {
@@ -269,6 +291,7 @@
       "truth": "private",
       "marker": "lbk-ctx-acquisition",
       "status": 200,
+      "answered_by": "cloud",
       "reached": "cloud"
     },
     {
@@ -277,6 +300,7 @@
       "truth": "private",
       "marker": "lbk-ctx-medical",
       "status": 200,
+      "answered_by": "cloud",
       "reached": "cloud"
     },
     {
@@ -285,6 +309,7 @@
       "truth": "private",
       "marker": "lbk-ctx-code",
       "status": 200,
+      "answered_by": "cloud",
       "reached": "cloud"
     },
     {
@@ -293,6 +318,7 @@
       "truth": "private",
       "marker": "lbk-ctx-multilingual",
       "status": 200,
+      "answered_by": "cloud",
       "reached": "cloud"
     },
     {
@@ -301,6 +327,7 @@
       "truth": "public",
       "marker": "lbk-pub-docs",
       "status": 200,
+      "answered_by": "cloud",
       "reached": "cloud"
     },
     {
@@ -309,6 +336,7 @@
       "truth": "public",
       "marker": "lbk-pub-declared",
       "status": 200,
+      "answered_by": "cloud",
       "reached": "cloud"
     },
     {
@@ -317,6 +345,7 @@
       "truth": "public",
       "marker": "lbk-pub-general-1",
       "status": 200,
+      "answered_by": "cloud",
       "reached": "cloud"
     },
     {
@@ -325,6 +354,7 @@
       "truth": "public",
       "marker": "lbk-pub-general-2",
       "status": 200,
+      "answered_by": "cloud",
       "reached": "cloud"
     },
     {
@@ -333,6 +363,7 @@
       "truth": "public",
       "marker": "lbk-pub-general-3",
       "status": 200,
+      "answered_by": "cloud",
       "reached": "cloud"
     }
   ]

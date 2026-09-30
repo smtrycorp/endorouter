@@ -67,9 +67,14 @@ class Router:
         sources: Sequence[str] = (),
         declared: Label | None = None,
         capability: str | None = None,
+        request_id: str | None = None,
     ) -> tuple[Decision, list[Finding]]:
         findings = scan_request(body, extra=[(f"sources[{i}]", s) for i, s in enumerate(sources)])
-        verdict = await classify(self.cfg, body, self.client) if self.cfg.classifier.enabled else None
+        verdict = None
+        if self.cfg.classifier.enabled:
+            # the classifier is local, but it still receives prompt text: that send is audited first like any other
+            self.audit.write({"event": "classifier_dispatch", "request_id": request_id, "target": self.cfg.classifier.target})
+            verdict = await classify(self.cfg, body, self.client)
         d = decide(
             self.cfg,
             requested_model=body.get("model"),
@@ -90,7 +95,7 @@ class Router:
         capability: str | None = None,
     ) -> Routed:
         request_id = uuid.uuid4().hex[:16]
-        decision, _ = await self.plan(body, sources=sources, declared=declared, capability=capability)
+        decision, _ = await self.plan(body, sources=sources, declared=declared, capability=capability, request_id=request_id)
         # written and flushed before anything leaves; raises AuditError (the caller refuses) if the log is unwritable
         self.audit.write({"event": "decision", "request_id": request_id, "mode": self.cfg.mode,
                           "policy_version": POLICY_VERSION, **decision.as_record()})
@@ -109,7 +114,8 @@ class Router:
             try:
                 req = self.client.build_request("POST", f"{target.url}/chat/completions", json=upstream, headers=headers,
                                                 timeout=target.timeout_s)
-                resp = await self.client.send(req, stream=stream)
+                # explicit per call: an injected client configured to follow redirects must not carry a body elsewhere
+                resp = await self.client.send(req, stream=stream, follow_redirects=False)
             except httpx.HTTPError as e:
                 attempts.append({"target": target.name, "error": type(e).__name__, "ms": int((time.monotonic() - t0) * 1000)})
                 continue

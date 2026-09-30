@@ -24,7 +24,12 @@ class AuditLog:
             with self._lock:
                 fd = os.open(self.path, os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o600)
                 try:
-                    os.write(fd, line.encode("utf-8"))
+                    data = memoryview(line.encode("utf-8"))
+                    while data:  # a short write is not a record: keep writing until every byte is accepted
+                        n = os.write(fd, data)
+                        if n <= 0:
+                            raise OSError("audit write made no progress")
+                        data = data[n:]
                     os.fsync(fd)
                 finally:
                     os.close(fd)

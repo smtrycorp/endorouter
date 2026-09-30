@@ -20,7 +20,7 @@ PROMPT = (
     "PUBLIC = general knowledge, public documentation, open-source code, or text written to be published.\n"
     "If unsure, answer PRIVATE.\nAnswer with exactly one word: PRIVATE or PUBLIC.\n\nTEXT:\n{text}\n\nANSWER:"
 )
-_VERDICT = re.compile(r"\b(PRIVATE|PUBLIC)\b")
+_VERDICT = re.compile(r"^\W*(PRIVATE|PUBLIC)\W*$")  # the whole answer is one verdict word, or it grants nothing
 MAX_CHARS = 12000
 
 
@@ -30,18 +30,22 @@ async def classify(cfg: Config, body: dict, client: httpx.AsyncClient) -> Label 
     t = cfg.target(cfg.classifier.target or "")
     if t is None or not t.is_local:  # defence in depth; config validation already requires this
         return None
-    text = "\n".join(s for _, s in texts_in_request(body))[:MAX_CHARS]
+    text = "\n".join(s for _, s in texts_in_request(body))
+    if len(text) > MAX_CHARS:
+        # never clear text the classifier did not read: a long request gets no verdict (strict treatment)
+        return None
     try:
         r = await client.post(
             f"{t.url}/chat/completions",
             json={"model": t.model, "messages": [{"role": "user", "content": PROMPT.format(text=text)}], "max_tokens": 8, "temperature": 0},
             timeout=cfg.classifier.timeout_s,
+            follow_redirects=False,
         )
         r.raise_for_status()
         answer = r.json()["choices"][0]["message"]["content"] or ""
     except Exception:  # noqa: BLE001
         return None
-    m = _VERDICT.search(answer.upper())
+    m = _VERDICT.match(answer.strip().upper())
     if not m:
         return None
     return Label.PRIVATE if m.group(1) == "PRIVATE" else Label.PUBLIC
