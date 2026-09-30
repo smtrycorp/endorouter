@@ -38,6 +38,7 @@ Every request gets one label: `public`, `unknown` or `private`. Labels only ever
 | No provenance | `unknown`, which stays local in strict mode |
 | A source matching `public_sources`, sent by a trusted client | may become `public` |
 | A source matching `private_sources` | `private` |
+| A path that climbs out of its root after normalising, such as `docs/public/../x` | `unknown`, never public |
 | A structural detector finding anywhere in the request | `private` |
 | The optional local classifier | can tighten; in balanced mode it may also clear `unknown`, and the audit log says so |
 
@@ -50,7 +51,7 @@ x-sovereign-label: public
 
 Only clients listed in `trusted_clients` can declare anything public. Any client can declare `private`.
 
-**Detectors check formats, not word lists.** They cover private keys, cloud and SaaS tokens, JWTs with a decodable header, credentials in URLs, Luhn-valid card numbers, US social security numbers, email addresses and phone numbers. They scan every message, including history, tool calls, tool results and tool definitions. Before matching, the text is normalised and zero-width characters are stripped.
+**Detectors check formats, not word lists.** They cover private keys, cloud and SaaS tokens, JWTs with a decodable header, credentials in URLs, Luhn-valid card numbers, US social security numbers, email addresses and phone numbers. They scan every field that is forwarded upstream: all messages including history, tool calls, tool results, tool definitions, stop sequences and response schemas. That includes dict keys and JSON carried inside strings. Before matching, the text is normalised and zero-width characters are stripped. Every pattern is bounded, so a large input scans in linear time.
 
 ## Guarantees
 
@@ -70,7 +71,7 @@ These are enforced in code and pinned by tests.
 A router can only enforce what it is told, so this section matters more than the rest.
 
 - **Localhost is not proof of local inference.** Some local servers can proxy requests to a hosted model. If a target you declare `local` forwards to a cloud, this router cannot know. `sovereign-router doctor` reminds you of this for every local target.
-- **Provenance is only as good as the client that sends it.** Configure `trusted_clients` narrowly.
+- **Provenance is only as good as the client that sends it.** Configure `trusted_clients` narrowly. If you put a reverse proxy on the same machine in front of the router, it must set `X-Forwarded-For`. Otherwise every caller arrives from 127.0.0.1 and counts as trusted.
 - **Detectors catch formats, not meaning.** That is why the default is local. In balanced mode, unlabelled work can reach the cloud if the local classifier calls it public, and that is a judgement call you opt into.
 
 ## leakbench
