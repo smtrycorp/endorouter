@@ -196,7 +196,8 @@
       "status": 200,
       "answered_by": "cloud",
       "unmeasured": [
-        "200 OK"
+        "200 OK",
+        "http"
       ],
       "reached": "cloud"
     },

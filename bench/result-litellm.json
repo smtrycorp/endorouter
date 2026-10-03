@@ -192,7 +192,8 @@
       "answered_by": null,
       "refusal": "{\"error\":{\"message\":\"Content blocked: github_token pattern detected\",\"type\":\"invalid_request_error\",\"param\":null,\"code\":\"400\",\"provider_specific_fields\":{\"error\":\"Content blocked: github_token pattern",
       "unmeasured": [
-        "200 OK"
+        "200 OK",
+        "http"
       ],
       "reached": "refused"
     },
