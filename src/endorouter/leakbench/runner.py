@@ -3,12 +3,15 @@
 Setup for the gateway under test: point its CLOUD destination at http://127.0.0.1:<sink-port>/v1 and its LOCAL destination
 at http://127.0.0.1:<sink-port + 1>/v1. leakbench starts both as fake OpenAI servers. The cloud one records every request.
 
-Cases are sent one at a time, and each sink records which case was in flight when a request arrived. A private case
-LEAKED if the cloud sink received anything while it was in flight, or anything carrying its marker (every message of a
-case carries the case's unique marker, so a gateway that sends only part of a conversation, or sends it late, is still
-caught). A request reaching a sink while no case is in flight cannot be attributed, and makes the run invalid. It was OVER-RESTRICTED if its truth is public and it never reached the cloud
-(a cost, not a leak; strict routers accept it by design). The result is measured at the sink, never taken from the
-gateway's own report.
+Each case is sent exactly as written, nothing added, one at a time, and the sinks keep listening a second after the
+last. Cases are told apart by their own content: every case must contain a string of 8 or more characters that no other
+case contains (the suite is refused otherwise). A private case LEAKED if any string of its own that no public case
+also contains (message text, tool calls, tool definitions, schema keys, refusals: any field) arrived at the cloud sink
+inside a single received string, whenever it arrived. So a gateway that forwards a whole conversation, a part of it,
+or a part of it late, quoted inside other text, is caught; one that rewrites the text beyond recognition is not. A
+case REACHED a sink only if its own content arrived there; a request carrying no case's content makes the run invalid.
+It was OVER-RESTRICTED if its truth is public and it never reached the cloud (a cost, not a leak; strict routers accept
+it by design). The result is measured at the sink, never taken from the gateway's own report.
 
 A case that reached neither sink counts as REFUSED only when the gateway answered with a deliberate refusal status (400, 403,
 451): that is safe for private data and over-restriction for public data. Anything else that reached no sink (connection
@@ -28,7 +31,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import secrets
 import time
 from collections import defaultdict
 from importlib import resources
@@ -42,10 +44,10 @@ from starlette.responses import JSONResponse
 from starlette.routing import Route
 
 
-def _fake_openai(name: str, seen: list[tuple[str | None, str]], in_flight: dict) -> Starlette:
+def _fake_openai(name: str, seen: list[str]) -> Starlette:
     async def chat(request: Request):
         raw = (await request.body()).decode("utf-8", "replace")
-        seen.append((in_flight.get("case"), raw))
+        seen.append(raw)
         return JSONResponse({"id": f"{name}-1", "object": "chat.completion", "created": int(time.time()), "model": name,
                              "choices": [{"index": 0, "finish_reason": "stop",
                                           "message": {"role": "assistant", "content": f"ok from {name}"}}],
@@ -75,130 +77,77 @@ REFUSAL_STATUSES = {400, 403, 451}
 CASE_METADATA = {"id", "category", "truth", "sources", "label", "model", "messages"}
 
 
-MARKER_WORDS = (
-    "apple river lantern otter violet copper meadow pebble harbor willow canyon falcon "
-    "garden thistle maple ember breeze cedar comet dune feather glacier hazel island "
-    "jasmine kettle lemon marble nectar orchard pepper quartz raven saddle tulip umber "
-    "valley walnut yarrow zephyr acorn basket candle daisy eagle fern grove hollow "
-    "ivory juniper kite lilac mango nutmeg olive parsley quill ribbon sparrow timber "
-    "velvet wheat amber bramble cobalt dahlia elm fig gravel heron indigo jade "
-    "kelp laurel moss nimbus opal pine rain sage tide upland vine wren "
-    "aspen birch clover delta echo flint gale hearth inlet jetty knoll ledge "
-    "mist north oak prairie quarry reed shore trail vale wave yew anchor "
-    "beacon cove drift estuary fjord grotto haven isle jungle lagoon mesa oasis "
-    "pond ridge summit thicket brook cliff dell field glen hill lake marsh "
-    "peak rock spring stream wood bay cape creek dawn dusk frost haze "
-    "moon sky snow star storm sun cloud wind bread butter cheese cocoa "
-    "cream honey jam milk oats rice salt sugar tea toast berry cherry "
-    "grape lime melon peach pear plum bean carrot corn leek onion pea "
-    "radish turnip basil chive dill mint thyme cotton linen silk wool button "
-    "needle thread yarn chair desk lamp shelf table bell drum flute harp "
-    "horn lute piano violin bridge canal castle chapel cottage fountain lighthouse mill "
-    "tower village arrow compass map rope sail boat cart wagon wheel badger "
-    "beaver bison deer fox hare lynx mole moose owl seal swan acre "
-    "bluff brick chalk clay dove goose iris lark loom pansy quail robin "
-    "slate sorrel thrush tinder "
-).split()
-
-
-def _marked(case: dict, model: str | None = None) -> tuple[dict, str]:
-    # Eight words drawn from a plain list: unique (256^8 = 2^64), fixed length so no marker contains another, and
-    # ordinary-looking text, so it changes no verdict. A random-letter token (the earlier form) looked like an
-    # identifier, and a local classifier called a public question private because of it.
-    marker = " ".join(secrets.choice(MARKER_WORDS) for _ in range(8))
-    msgs = json.loads(json.dumps(case["messages"]))
-    # One marker, before everything the case says, so it never sits between two pieces a detector reads as one (a
-    # key split across messages, or across a message and a tool call, must stay joinable) and adds no turn after a
-    # tool call, which strict servers refuse. Parts of a conversation sent without it are found by their content.
-    first = msgs[0] if msgs else None
-    texts = [p for p in first.get("content") or [] if isinstance(p, dict) and isinstance(p.get("text"), str)] \
-        if first is not None and isinstance(first.get("content"), list) else []
-    if first is not None and isinstance(first.get("content"), str):
-        first["content"] = f"[{marker}]\n{first['content']}"
-    elif texts:
-        texts[0]["text"] = f"[{marker}]\n{texts[0]['text']}"
-    else:
-        msgs.insert(0, {"role": "user", "content": f"[{marker}]"})
+def _body(case: dict, model: str | None = None) -> dict:
+    """The request exactly as the case defines it. Nothing is added: any tag in the text could change what a
+    detector or a classifier decides (a random-letter tag once made a classifier call a public question private,
+    and a prefix stopped JSON in a message being read as JSON), so cases are told apart by their own content."""
     # every request field a case carries is kept (stop, response_format, tools, ...); only benchmark metadata is not sent
     fields = {k: json.loads(json.dumps(v)) for k, v in case.items() if k not in CASE_METADATA}
-    return {**fields, "model": model or case.get("model", "auto"), "messages": msgs}, marker
+    return {**fields, "model": model or case.get("model", "auto"), "messages": json.loads(json.dumps(case["messages"]))}
 
 
 CALIBRATION = {"id": "calibration", "category": "calibration", "truth": "public",
                "messages": [{"role": "user", "content": "What is the capital of France?"}]}
 
-
-FINGERPRINT_MIN = 12  # shorter strings ("hello", "auto") are too common to say which case they came from
-
-
-# request fields that say how to answer, not what the case says: never evidence of which case a request carries
-STRUCTURAL = {"model", "stream", "stream_options", "n", "temperature", "top_p", "max_tokens", "max_completion_tokens",
-              "presence_penalty", "frequency_penalty", "seed", "logprobs", "top_logprobs", "parallel_tool_calls",
-              "tool_choice"}
+EVIDENCE_MIN = 8  # shorter strings ("hello", "auto") are too common to say which case they came from
+# words any chat request may carry by its format, whichever case it is: never evidence of a case
+FORMAT_WORDS = frozenset({"assistant", "function", "developer", "tool_calls", "parameters", "properties", "required",
+                          "description", "additionalProperties", "json_schema", "json_object", "image_url", "arguments",
+                          "tool_call_id", "response_format"})
 
 
-def _content(body) -> list[str]:
-    """The strings a request says, where a secret can sit: message text and text parts, tool-call arguments, tool
-    results, and every string in the other fields (tool definitions, response schemas, stop sequences, metadata).
-    Not roles, types, ids or names of messages, or the model: every case shares those, and "user" sent as a case's
-    text would otherwise match the role of every request. Applied to cases and to what sinks receive alike."""
-    if not isinstance(body, dict):
-        return []
-    out: list[str] = []
-    for m in body.get("messages") or []:
-        if not isinstance(m, dict):
-            continue
-        c = m.get("content")
-        if isinstance(c, str):
-            out.append(c)
-        elif isinstance(c, list):
-            out += [p["text"] for p in c if isinstance(p, dict) and isinstance(p.get("text"), str)]
-        for call in m.get("tool_calls") or []:
-            args = (call.get("function") or {}).get("arguments") if isinstance(call, dict) else None
-            if isinstance(args, str):
-                out.append(args)
-    stack = [v for k, v in body.items() if k not in STRUCTURAL and k != "messages"]
+def _strings(value) -> list[str]:
+    """Every string in a JSON value, keys included (a secret can be a schema's property name). Iterative."""
+    out, stack = [], [value]
     while stack:
         v = stack.pop()
         if isinstance(v, str):
             out.append(v)
         elif isinstance(v, dict):
+            stack.extend(v.keys())
             stack.extend(v.values())
         elif isinstance(v, list):
             stack.extend(v)
     return out
 
 
-def _case_strings(bodies: dict[str, dict], markers: set[str]) -> dict[str, set[str]]:
-    """Per case, every content string it sent, marker removed; empty strings say nothing and are dropped."""
-    return {cid: {s for s in (_unmarked(x, markers) for x in _content(body)) if s.strip()}
-            for cid, body in bodies.items()}
+def _case_strings(body: dict) -> set[str]:
+    """What a case says, as evidence: every string it sends but the model name, long enough to be specific."""
+    found = {s.strip() for s in _strings({k: v for k, v in body.items() if k != "model"})}
+    return {s for s in found if len(s) >= EVIDENCE_MIN and s not in FORMAT_WORDS}
 
 
-def _unmarked(s: str, markers: set[str]) -> str:
-    if "[" in s:
-        for m in markers:
-            s = s.replace(f"[{m}]\n", "").replace(f"[{m}]", "")
-    return s
-
-
-def _fingerprints(strings: dict[str, set[str]]) -> dict[str, set[str]]:
-    """Per case, the strings that name it when found inside a longer text: long enough to be specific, and neither
-    equal to nor contained in anything another case sent (so a shared or overlapping system prompt names no one)."""
-    prints = {}
+def _evidence(bodies: dict[str, dict], truths: dict[str, str]) -> tuple[dict[str, set[str]], dict[str, set[str]]]:
+    """Per case, the strings that identify it (in no other case's text), and per private case the strings whose
+    presence at the cloud is a leak (in no public case's text; possibly shared with another private case, which then
+    leaked too, since either could be the source). Raises ValueError for a case with nothing of its own: it could
+    not be told apart from the others, so no result about it would mean anything."""
+    strings = {cid: _case_strings(b) for cid, b in bodies.items()}
+    public_text = [s for cid, ss in strings.items() if truths[cid] == "public" for s in ss]
+    ident, leak = {}, {}
     for cid, mine in strings.items():
         others = [s for other, ss in strings.items() if other != cid for s in ss]
-        prints[cid] = {s for s in mine if len(s) >= FINGERPRINT_MIN and not any(s in o for o in others)}
-    return prints
+        ident[cid] = {s for s in mine if not any(s in o for o in others)}
+        if not ident[cid]:
+            raise ValueError(f"case {cid!r} has no text of its own ({EVIDENCE_MIN}+ characters found in no other "
+                             "case), so leakbench cannot tell where it went; give it some")
+        if truths[cid] == "private":
+            leak[cid] = {s for s in mine if not any(s in o for o in public_text)}
+    return ident, leak
 
 
 def _received(raw: str) -> list[str]:
-    """What a sink was sent, as the same content strings a case is described by (see _content). A body that is not
-    JSON is kept whole, so a marker or fingerprint in it is still found."""
+    """What a sink was sent, as its strings (keys included); a body that is not JSON is one string."""
     try:
-        return _content(json.loads(raw))
+        return _strings(json.loads(raw))
     except (ValueError, RecursionError):
         return [raw]
+
+
+def _contains(evidence: set[str], got: list[str]) -> bool:
+    """Is any piece of evidence inside one of the received strings? One string at a time: text from two messages is
+    never joined, or a case's string could be assembled from pieces another case sent separately."""
+    return any(e in g for e in evidence for g in got)
 
 
 def _answered_by(text: str) -> str:
@@ -212,18 +161,17 @@ def _answered_by(text: str) -> str:
 async def run(base_url: str, cases_path: str | None = None, *, sink_port: int = 8799, sources_header: bool = True,
               model: str | None = None, extra_body: dict | None = None, settle_s: float = 1.0) -> dict:
     cases = load_cases(cases_path)
-    sent_bodies: dict[str, dict] = {}
-    cloud_seen: list[tuple[str | None, str]] = []
-    local_seen: list[tuple[str | None, str]] = []
-    in_flight: dict = {"case": None}
-    cloud = await _serve(_fake_openai("fake-cloud", cloud_seen, in_flight), sink_port)
-    local = await _serve(_fake_openai("fake-local", local_seen, in_flight), sink_port + 1)
+    bodies = {c["id"]: _body(c, model) for c in [CALIBRATION, *cases]}
+    ident, leak_evidence = _evidence(bodies, {c["id"]: c["truth"] for c in [CALIBRATION, *cases]})
+    cloud_seen: list[str] = []
+    local_seen: list[str] = []
+    cloud = await _serve(_fake_openai("fake-cloud", cloud_seen), sink_port)
+    local = await _serve(_fake_openai("fake-local", local_seen), sink_port + 1)
     rows: list[dict] = []
     try:
         async with httpx.AsyncClient(timeout=60, trust_env=False) as client:
             for c in [CALIBRATION, *cases]:
-                body, marker = _marked(c, model)
-                sent_bodies[c["id"]] = body
+                body = json.loads(json.dumps(bodies[c["id"]]))
                 if extra_body:
                     body.update(json.loads(json.dumps(extra_body).replace("{id}", c["id"])))
                 headers: list[tuple[str, str]] = []
@@ -232,15 +180,12 @@ async def run(base_url: str, cases_path: str | None = None, *, sink_port: int = 
                     if c.get("label"):
                         headers.append(("x-endorouter-label", c["label"]))
                 text = ""
-                in_flight["case"] = c["id"]
                 try:
                     r = await client.post(f"{base_url.rstrip('/')}/chat/completions", json=body, headers=headers)
                     status, text = r.status_code, r.text
                 except httpx.HTTPError as e:
                     status = f"error:{type(e).__name__}"
-                finally:
-                    in_flight["case"] = None
-                row = {"id": c["id"], "category": c["category"], "truth": c["truth"], "marker": marker, "status": status,
+                row = {"id": c["id"], "category": c["category"], "truth": c["truth"], "status": status,
                        "answered_by": _answered_by(text) if status == 200 else None}
                 if status in REFUSAL_STATUSES:
                     row["refusal"] = text[:200]  # so a reader can check each refusal is a policy decision
@@ -252,50 +197,30 @@ async def run(base_url: str, cases_path: str | None = None, *, sink_port: int = 
         local.should_exit = True
         await asyncio.sleep(0.1)
 
-    # A request belongs to every case whose marker it carries, and to every case whose own content it carries (so a
-    # part of a conversation sent without the marker, such as a tool call, is still credited to its case). Only a
-    # request with neither falls back to the case in flight, so a late send of one case is never credited to the next.
-    # Then every exact string in the request that belongs to other cases, and is not explained by a case already
-    # credited, is credited to all of its owners: an honest gateway sends one case's content only while that case
-    # is in flight, so a string of another case's (however short, however shared) is a leak of that case's.
-    markers = {r["marker"]: r["id"] for r in rows}
-    strings = _case_strings(sent_bodies, set(markers))
-    prints = _fingerprints(strings)
-    owner_of: dict[str, set[str]] = defaultdict(set)
-    for cid, ss in strings.items():
-        for s in ss:
-            owner_of[s].add(cid)
+    # Every request a sink received, as the cases whose content it carries: a case's own strings show it ran there;
+    # a private case's leak evidence at the cloud is a leak, whenever it arrived and whatever else came with it.
+    cloud_got = [_received(raw) for raw in cloud_seen]
+    local_got = [_received(raw) for raw in local_seen]
 
-    def owners(case: str | None, raw: str) -> set[str]:
-        got = _received(raw)
-        text = "\n".join(got)
-        found = {cid for m, cid in markers.items() if m in text}
-        found |= {cid for cid, ss in prints.items() if any(s in text for s in ss)}
-        if not found and case:
-            found = {case}
-        explained = set(found)  # fixed before the loop, so the result does not depend on the order strings come in
-        for s in got:
-            who = owner_of.get(_unmarked(s, set(markers)))
-            if who and not (who & explained):
-                found |= who
-        return found
+    def at(got: list[list[str]], cid: str) -> bool:
+        return any(_contains(ident[cid], g) for g in got)
 
-    cloud_ids = [owners(c, raw) for c, raw in cloud_seen]
-    local_ids = [owners(c, raw) for c, raw in local_seen]
+    def leaked(cid: str) -> bool:
+        return any(_contains(leak_evidence[cid], g) for g in cloud_got)
 
-    def reached(ids: list[set[str]], row: dict) -> bool:
-        return any(row["id"] in s for s in ids)
+    def anyone(g: list[str]) -> bool:
+        return any(_contains(ident[c], g) for c in ident) or any(_contains(ev, g) for ev in leak_evidence.values())
 
     calib = rows.pop(0)
-    calib_ok = reached(cloud_ids, calib) or reached(local_ids, calib)
-    stray = sum(1 for s in cloud_ids + local_ids if not s)
+    calib_ok = at(cloud_got, calib["id"]) or at(local_got, calib["id"])
+    stray = sum(1 for g in cloud_got + local_got if not anyone(g))
     by_cat: dict[str, dict] = defaultdict(lambda: {"cases": 0, "leaked": 0, "over_restricted": 0})
     leaks, over, private_n, public_n = [], [], 0, 0
     for row in rows:
-        reached_cloud = reached(cloud_ids, row)
+        reached_cloud = leaked(row["id"]) if row["truth"] == "private" else at(cloud_got, row["id"])
         if reached_cloud:
             row["reached"] = "cloud"
-        elif reached(local_ids, row):
+        elif at(local_got, row["id"]):
             row["reached"] = "local"
         elif row["status"] in REFUSAL_STATUSES:
             row["reached"] = "refused"
@@ -323,7 +248,7 @@ async def run(base_url: str, cases_path: str | None = None, *, sink_port: int = 
     if unrouted:
         problems.append(f"{len(unrouted)} case(s) reached no sink and were not refused")
     if stray:
-        problems.append(f"{stray} request(s) reached a sink while no case was in flight: they cannot be attributed, "
+        problems.append(f"{stray} request(s) reached a sink carrying no case's content: they cannot be attributed, "
                         "so a leak could hide among them")
     if unobserved:
         problems.append(f"{len(unobserved)} answer(s) came from a destination leakbench does not observe")

@@ -14,7 +14,7 @@ from endorouter.audit import AuditError
 from endorouter.classifier import classify
 from endorouter.config import parse_config
 from endorouter.detectors import scan_request, scan_text
-from endorouter.leakbench.runner import _case_strings, _fingerprints, _marked, _received
+from endorouter.leakbench.runner import _body, _contains, _evidence, _received
 from endorouter.router import Router
 from endorouter.server import create_app
 from tests.test_review_1 import _balanced
@@ -109,32 +109,6 @@ def test_escaped_quotes_scan_in_linear_time():
     assert time.perf_counter() - t0 < 1.0  # the retrying regex took over a second at 16 k; this is 64 k
 
 
-def test_the_marker_never_splits_a_key_across_messages():
-    case = {"id": "s", "category": "c", "truth": "private", "label": "public",
-            "messages": [{"role": "user", "content": "AK"}, {"role": "user", "content": "IAIOSFODNN7EXAMPLE"}]}
-    assert scan_request({"messages": case["messages"]})
-    body, _ = _marked(case)
-    assert scan_request(body), "the benchmark's own marker hid the key"
-
-
-def test_a_tool_call_sent_without_its_marker_is_traced_to_its_case():
-    a = {"messages": [{"role": "user", "content": "deploy it"}, {"role": "assistant", "content": None, "tool_calls": [
-        {"id": "c1", "type": "function", "function": {"name": "push", "arguments": "{\"key\": \"AKIAIOSFODNN7EXAMPLE\"}"}}]},
-        {"role": "tool", "tool_call_id": "c1", "content": "pushed"}, {"role": "user", "content": "done?\n[lbkA]"}]}
-    b = {"messages": [{"role": "user", "content": "What is the tallest mountain on Earth?\n[lbkB]"}]}
-    prints = _fingerprints(_case_strings({"A": a, "B": b}, {"lbkA", "lbkB"}))
-    leaked = json.dumps({"messages": [a["messages"][1], b["messages"][0]]})
-    text = "\n".join(_received(leaked))
-    assert any(s in text for s in prints["A"]) and any(s in text for s in prints["B"])
-
-
-def test_a_string_two_cases_share_names_neither():
-    shared = "You are a helpful assistant."
-    prints = _fingerprints(_case_strings({"A": {"messages": [{"role": "system", "content": shared}]},
-                                          "B": {"messages": [{"role": "system", "content": shared}]}}, set()))
-    assert shared not in prints["A"] | prints["B"]
-
-
 def test_every_label_is_true():
     from endorouter.labels import Label
 
@@ -167,33 +141,6 @@ def test_a_classifier_that_never_read_the_text_is_not_reported_as_a_recipient(tm
 
 
 
-@pytest.mark.parametrize("last", [
-    {"role": "user", "content": [{"type": "text", "text": "IAIOSFODNN7EXAMPLE"}]},
-    {"role": "assistant", "content": None, "tool_calls": [
-        {"id": "c1", "type": "function", "function": {"name": "f", "arguments": "IAIOSFODNN7EXAMPLE"}}]},
-])
-def test_the_marker_never_splits_a_key_whatever_the_last_message_is(last):
-    # including an assistant message with empty text and a tool call, and with no extra turn after the tool call
-    case = {"id": "s", "category": "c", "truth": "private", "messages": [{"role": "user", "content": "AK"}, last]}
-    assert scan_request({"messages": case["messages"]})
-    body, marker = _marked(case)
-    assert scan_request(body) and marker in json.dumps(body["messages"][0])  # before everything
-
-
-@pytest.mark.parametrize("msgs", [
-    [{"role": "user", "content": "deploy with key AK"}, {"role": "assistant", "content": "", "tool_calls": [
-        {"id": "c1", "type": "function", "function": {"name": "deploy", "arguments": "IAIOSFODNN7EXAMPLE"}}]}],
-    [{"role": "assistant", "content": "AK", "tool_calls": [
-        {"id": "c1", "type": "function", "function": {"name": "deploy", "arguments": "IAIOSFODNN7EXAMPLE"}}]}],
-])
-def test_the_marker_never_splits_text_from_a_following_tool_call(msgs):
-    case = {"id": "s", "category": "c", "truth": "private", "label": "public", "messages": msgs}
-    assert scan_request({"messages": msgs})
-    body, _ = _marked(case)
-    assert scan_request(body)
-    assert body["messages"][-1].get("tool_calls")  # no turn added after the tool call
-
-
 def test_no_dispatch_record_when_the_classifier_is_not_sent_the_text(tmp_path):
     cfg = _balanced(tmp_path)
     router = Router(cfg, client=httpx.AsyncClient(transport=httpx.MockTransport(
@@ -201,3 +148,84 @@ def test_no_dispatch_record_when_the_classifier_is_not_sent_the_text(tmp_path):
     asyncio.run(router.route({"model": "auto", "messages": [{"role": "user", "content": "x" * 12001}]}))
     log = open(cfg.audit_log).read()
     assert "classifier_dispatch" not in log and "too_long" in log
+
+
+@pytest.mark.parametrize("msgs", [
+    [{"role": "user", "content": "AK"}, {"role": "user", "content": "IAIOSFODNN7EXAMPLE"}],
+    [{"role": "user", "content": "deploy with key AK"}, {"role": "assistant", "content": "", "tool_calls": [
+        {"id": "c1", "type": "function", "function": {"name": "deploy", "arguments": "IAIOSFODNN7EXAMPLE"}}]}],
+    [{"role": "user", "content": "{\"AKIA\":\"IOSFODNN7EXAMPLE\"}"}],
+])
+def test_a_case_is_sent_exactly_as_written(msgs):
+    # nothing added, so nothing the benchmark adds can change what a detector or classifier decides
+    case = {"id": "s", "category": "c", "truth": "private", "label": "public", "messages": msgs, "stop": ["END"]}
+    body = _body(case)
+    assert body["messages"] == msgs and body["stop"] == ["END"] and set(body) == {"messages", "stop", "model"}
+    assert scan_request(body)
+
+
+def _bodies(*cases):
+    return {c["id"]: _body(c) for c in cases}, {c["id"]: c["truth"] for c in cases}
+
+
+def test_a_tool_call_or_refusal_forwarded_alone_is_found():
+    a = {"id": "a", "truth": "private", "messages": [{"role": "user", "content": "deploy it now please"},
+         {"role": "assistant", "content": None, "refusal": "I cannot disclose AKIAIOSFODNN7EXAMPLE.", "tool_calls": [
+             {"id": "c1", "type": "function", "function": {"name": "push", "arguments": "{\"key\": \"AKIAIOSFODNN7EXAMPLE\"}"}}]}]}
+    b = {"id": "b", "truth": "public", "messages": [{"role": "user", "content": "What is the tallest mountain on Earth?"}]}
+    ident, leak = _evidence(*_bodies(a, b))
+    carried = json.dumps({"messages": [{"role": "assistant", "content": "earlier: I cannot disclose AKIAIOSFODNN7EXAMPLE."},
+                                       b["messages"][0]]})
+    assert _contains(leak["a"], _received(carried))
+
+
+def test_a_schema_key_is_evidence():
+    a = {"id": "a", "truth": "private", "messages": [{"role": "user", "content": "configure the tool now"}],
+         "tools": [{"type": "function", "function": {"name": "f", "parameters": {"properties": {"AKIAIOSFODNN7EXAMPLE": {}}}}}]}
+    b = {"id": "b", "truth": "public", "messages": [{"role": "user", "content": "What is the tallest mountain on Earth?"}],
+         "tools": [{"type": "function", "function": {"name": "f", "parameters": {"properties": {"public_field": {}}}}}]}
+    ident, leak = _evidence(*_bodies(a, b))
+    assert "AKIAIOSFODNN7EXAMPLE" in leak["a"] and "function" not in leak["a"]
+
+
+def test_text_split_across_two_received_strings_is_not_assembled():
+    a = {"id": "a", "truth": "private", "messages": [
+        {"role": "system", "content": "You are a helpful assistant.\nAnswer concisely."},
+        {"role": "user", "content": "Our confidential acquisition plan."}]}
+    b = {"id": "b", "truth": "public", "messages": [{"role": "system", "content": "You are a helpful assistant."},
+         {"role": "developer", "content": "Answer concisely."}, {"role": "user", "content": "What is the tallest mountain?"}]}
+    ident, leak = _evidence(*_bodies(a, b))
+    assert not _contains(leak["a"], _received(json.dumps(_body(b))))
+
+
+def test_a_string_two_cases_share_identifies_neither():
+    shared = {"role": "system", "content": "You are a helpful assistant."}
+    a = {"id": "a", "truth": "private", "messages": [shared, {"role": "user", "content": "first private question"}]}
+    b = {"id": "b", "truth": "public", "messages": [shared, {"role": "user", "content": "second public question"}]}
+    ident, leak = _evidence(*_bodies(a, b))
+    assert shared["content"] not in ident["a"] | ident["b"] | leak["a"]
+
+
+def test_a_case_with_nothing_of_its_own_is_refused():
+    a = {"id": "a", "truth": "private", "messages": [{"role": "user", "content": "user"}]}
+    b = {"id": "b", "truth": "public", "messages": [{"role": "user", "content": "What is the tallest mountain?"}]}
+    with pytest.raises(ValueError, match="no text of its own"):
+        _evidence(*_bodies(a, b))
+
+
+
+def test_a_long_key_costs_memory_in_proportion():
+    import tracemalloc
+
+    def peak(n):
+        body = {"model": "auto", "messages": [{"role": "user", "content": "hi"}], "tools": [{"type": "function",
+                "function": {"name": "f", "parameters": {"properties": {"x" * n: {"enum": ["a"] * n}}}}}]}
+        tracemalloc.start()
+        scan_request(body)
+        used = tracemalloc.get_traced_memory()[1]
+        tracemalloc.stop()
+        return used
+
+    peak(100)
+    small, big = peak(4000), peak(16000)
+    assert big < 6 * small  # 4x the input; the path-copying version grew 16x (248 MiB at 16 k)

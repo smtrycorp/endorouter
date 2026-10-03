@@ -398,7 +398,9 @@ def _walk(obj, where: str) -> Iterator[tuple[str, str]]:
         elif isinstance(o, dict):
             # children pushed in reverse so they come off the stack in document order (the classifier reads this text)
             for k, v in reversed(list(o.items())):
-                stack.append((v, f"{w}.{k}", depth + 1))
+                # the key itself is scanned in full (below); in the location it is cut short, or a long key would be
+                # copied into the path of every value under it (quadratic memory)
+                stack.append((v, f"{w}.{k if len(k) <= 32 else k[:32] + '…'}", depth + 1))
                 if isinstance(k, str):
                     stack.append((k, f"{w}.<key>", depth + 1))
         elif isinstance(o, list):

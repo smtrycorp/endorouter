@@ -129,16 +129,4 @@ def test_nested_non_text_shapes_are_rejected(tmp_path, msg):
     assert c.post("/v1/chat/completions", json={"model": "auto", "messages": [msg]}).status_code == 400 and up.calls == []
 
 
-def test_leakbench_markers_never_contain_one_another():
-    from endorouter.leakbench.runner import _marked
 
-    m = {_marked({"id": i, "messages": [{"role": "user", "content": "x"}]})[1] for i in ("p", "public", "p")}
-    assert len(m) == 3 and not any(a != b and a in b for a in m for b in m)
-
-
-def test_leakbench_markers_never_look_like_secrets():
-    from endorouter.leakbench.runner import _marked
-
-    for i in range(200):
-        body, _ = _marked({"id": str(i), "messages": [{"role": "user", "content": "What is TCP?"}]})
-        assert scan_request(body) == []

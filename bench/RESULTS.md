@@ -14,7 +14,7 @@ Every result here was produced by commit `2947176`; `bench/run-info-*.txt` recor
 | LiteLLM 1.103.1, content filter on every request | 13 of 24 | 0 of 5 |
 | Pass-through control (cloud declared local) | 24 of 24 | 0 of 5 |
 
-All five runs are valid. In each, the calibration request reached a sink, every case reached a sink or was refused, every answer came from a recording sink, and no request reached a sink outside the case it belonged to. Since 2026-10-03, leakbench credits each request a sink receives to the cases whose marker or unique strings it carries, to every other case whose content strings it carries verbatim, and otherwise to the case in flight; a request it cannot attribute makes the run invalid. A gateway that forwards part of a conversation verbatim, such as one tool call or a short message, therefore counts as leaking; one that rewrites what it forwards is caught only if a marker or unique string survives (see the README). All 11 LiteLLM refusals were its content filter reporting a matched pattern, and the reports keep each refusal message. A refusal is still the gateway's own claim, so leakbench reports refusals separately and marks them unverified. Counting them as safe favours LiteLLM.
+All five runs are valid. In each, the calibration request reached a sink, every case reached a sink or was refused, every answer came from a recording sink, and no request reached a sink outside the case it belonged to. Since 2026-10-03, leakbench sends each case exactly as written and tells cases apart by their own content: a private case leaked if any string of its own that no public case contains arrived at the cloud sink, whenever it arrived, and a case counts as run only if its own content reached a sink. A gateway that forwards part of a conversation verbatim or quoted inside other text therefore counts as leaking; one that rewrites it beyond recognition is not caught (see the README). All 11 LiteLLM refusals were its content filter reporting a matched pattern, and the reports keep each refusal message. A refusal is still the gateway's own claim, so leakbench reports refusals separately and marks them unverified. Counting them as safe favours LiteLLM.
 
 ## By category
 
@@ -53,7 +53,7 @@ In balanced mode, unlabelled work may go to the cloud when no detector fires and
 - **Run-to-run variation.** In some runs one public question stayed local, and which one varied. An example is a public-source request with no substance: "Explain what this README section means for a new user". The classifier may tighten any request, even one with public provenance, so a flip like this costs a cloud trip and never causes a leak.
 - **Latency.** Every unlabelled request waits for the classifier. The first run averaged about 9.5 seconds per request on that machine.
 
-**The marker can sway a classifier.** leakbench tags each case with a unique marker. When that marker was a random 27-letter token placed first in the case, the local classifier called one public question private in 2 of 3 runs (3 of 3 public without it), so balanced mode briefly showed 1 of 5 and 1 of 8 public cases kept local. Markers are now eight plain words; the same question was public 5 of 5, and the numbers above are with them. A benchmark that tags its inputs should check that the tag changes no verdict.
+**A benchmark's tags can sway what it measures.** leakbench used to add a unique marker to each case. A random 27-letter marker placed first made the local classifier call one public question private in 2 of 3 runs (3 of 3 public without it), and a reviewer showed a marker could stop JSON in a message being read as JSON, hiding a key from the detectors. leakbench now adds nothing to a case and identifies cases by their own content; the numbers above were run that way.
 
 ## The harder suite
 
@@ -76,7 +76,7 @@ The strict zero here holds by construction, as on the main suite: none of these 
 
 **The first balanced run on this suite leaked 1 of 10.** The suite then had 10 private cases; the other 5 were added afterwards. It was the key split across two messages. No single string held a whole key, so no detector fired, and the classifier called the conversation public. We added two detector rules. The first flags a distinctive issuer prefix standing on its own, such as `AKIAIOSF`. The second rejoins text typed out letter by letter. The rerun above leaked none.
 
-The three unknown-vendor keys are caught by a rule with no vendor list, described in the README. While adding it we found that leakbench's own random hex markers looked like secrets to that rule, which made 6 public cases look private. Markers are now random lowercase letters, and a test checks that no marker trips a detector.
+The three unknown-vendor keys are caught by a rule with no vendor list, described in the README. While adding it we found that leakbench's own random hex markers looked like secrets to that rule, which made 6 public cases look private. That was the first sign that tagging cases changes results; leakbench now adds no markers at all (see above).
 
 The suite is still small, and it was written by the same authors as the router.
 

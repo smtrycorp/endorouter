@@ -45,6 +45,16 @@ def _gateway(behaviour: str) -> Starlette:
             async with httpx.AsyncClient(trust_env=False) as c:
                 r = await c.post(f"http://127.0.0.1:{SINK + 1}/v1/chat/completions", json=body)
             return JSONResponse(r.json())
+        if behaviour == "ping" and "confidential" in json.dumps(body):
+            # never forwards the private case: sends something unrelated to the local sink, then fails
+            async with httpx.AsyncClient(trust_env=False) as c:
+                await c.post(f"http://127.0.0.1:{SINK + 1}/v1/chat/completions", json={"model": "m", "messages": [
+                    {"role": "user", "content": "ping"}]})
+            return JSONResponse({"error": "boom"}, status_code=500)
+        if behaviour == "ping":
+            async with httpx.AsyncClient(trust_env=False) as c:
+                r = await c.post(f"http://127.0.0.1:{SINK + 1}/v1/chat/completions", json=body)
+            return JSONResponse(r.json())
         if behaviour in ("carry", "honest"):
             # cloud only for the public case ("tallest"); "carry" also smuggles the first private message along
             public = "tallest" in json.dumps(body)
@@ -81,7 +91,7 @@ def _run(behaviour: str, tmp_path, suite: list | None = None) -> dict:
         {"id": "p1", "category": "c", "truth": "private", "messages": [
             {"role": "user", "content": "AKIAIOSFODNN7EXAMPLE is our key"}, {"role": "assistant", "content": "noted"},
             {"role": "user", "content": "secret"}]},
-        {"id": "u1", "category": "c", "truth": "public", "messages": [{"role": "user", "content": "hello"}]},
+        {"id": "u1", "category": "c", "truth": "public", "messages": [{"role": "user", "content": "hello, how is the weather?"}]},
     ]))
 
     async def main():
@@ -136,7 +146,7 @@ def test_history_sent_to_cloud_while_the_last_turn_stays_local_is_a_leak(tmp_pat
 
 def test_sink_traffic_outside_any_case_invalidates_the_run(tmp_path):
     res = _run("stray", tmp_path)
-    assert not res["valid"] and any("no case was in flight" in p for p in res["problems"])
+    assert not res["valid"] and any("carrying no case's content" in p for p in res["problems"])
 
 
 def test_a_late_send_is_credited_to_its_own_case_not_the_next(tmp_path):
@@ -178,7 +188,8 @@ def test_a_prompt_inside_another_cases_longer_prompt_invents_no_leak(tmp_path):
 
 
 def test_a_case_whose_text_is_a_role_name_invents_no_leak(tmp_path):
-    a = {"id": "a", "category": "c", "truth": "private", "messages": [{"role": "user", "content": "user"}]}
+    a = {"id": "a", "category": "c", "truth": "private", "messages": [{"role": "user", "content": "user"},
+                                                                        {"role": "user", "content": "Our confidential plan."}]}
     res = _run("honest", tmp_path, [a, _public()])
     assert res["valid"] and res["leaks"] == 0
 
@@ -188,5 +199,11 @@ def test_a_tool_definition_carried_to_another_request_is_seen():
 
     body = {"model": "m", "messages": [{"role": "user", "content": "hi"}],
             "tools": [{"type": "function", "function": {"name": "db", "description": "postgres://admin:pw@db/prod"}}]}
-    got = _received(json.dumps(body))
-    assert "postgres://admin:pw@db/prod" in got and "m" not in got and "user" not in got
+    assert "postgres://admin:pw@db/prod" in _received(json.dumps(body))
+
+
+def test_unrelated_traffic_never_counts_as_a_case_having_run(tmp_path):
+    a = {"id": "a", "category": "c", "truth": "private",
+         "messages": [{"role": "user", "content": "Our confidential acquisition plan."}]}
+    res = _run("ping", tmp_path, [a, _public()])
+    assert not res["valid"] and "a" in res["unrouted_ids"]

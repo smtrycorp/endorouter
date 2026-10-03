@@ -148,10 +148,10 @@ def test_router_route_refuses_non_text_content(tmp_path):
 
 # new 7: leakbench keeps every request field a case carries
 def test_leakbench_keeps_case_request_fields():
-    from endorouter.leakbench.runner import _marked
+    from endorouter.leakbench.runner import _body
 
-    body, _ = _marked({"id": "x", "category": "c", "truth": "private", "stop": AWS,
-                       "messages": [{"role": "user", "content": "hi"}]})
+    body = _body({"id": "x", "category": "c", "truth": "private", "stop": AWS,
+                  "messages": [{"role": "user", "content": "hi"}]})
     assert body["stop"] == AWS and "truth" not in body and "category" not in body
 
 
