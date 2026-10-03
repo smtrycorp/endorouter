@@ -25,7 +25,7 @@ from starlette.routing import Route
 from . import __version__
 from .audit import AuditError
 from .config import Config
-from .detectors import _table
+from .detectors import _nonstarter_run, _table
 from .labels import Label
 from .policy import source_label
 from .router import Refused, Router, SentUnrecorded, UpstreamFailed, iter_stream
@@ -66,7 +66,8 @@ async def _read_body(request: Request) -> bytes | None:
 
 def create_app(cfg: Config, router: Router | None = None) -> Starlette:
     r = router or Router(cfg)
-    _table()  # build the detector normalisation table now, not on the first request
+    _table()  # build the detector normalisation tables now, not on the first request
+    _nonstarter_run()
 
     async def chat(request: Request):
         # application/json cannot be sent cross-site without a CORS preflight, which this server never answers

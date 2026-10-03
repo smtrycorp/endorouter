@@ -55,8 +55,11 @@ def _table() -> dict[int, str | None]:
 
 @functools.cache
 def _nonstarter_run() -> re.Pattern:
-    """30 characters in a row with a nonzero canonical combining class (accents and other marks), built once."""
-    cps = [cp for cp in range(0x110000) if unicodedata.combining(chr(cp))]
+    """30 characters in a row that each normalise to something starting with a mark (nonzero combining class), built
+    once. Judged on the normalised form, not the character itself: U+0F73 has class 0 but becomes two marks, so
+    counting only marks as written let a run of it through to a quadratic sort."""
+    cps = [cp for cp in range(0x110000)
+           if (d := unicodedata.normalize("NFKD", chr(cp))) and unicodedata.combining(d[0])]
     ranges, start = [], cps[0]
     for prev, cp in zip(cps, cps[1:] + [None], strict=True):
         if cp != prev + 1 if cp is not None else True:

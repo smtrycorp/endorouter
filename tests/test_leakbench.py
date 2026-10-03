@@ -162,7 +162,8 @@ def test_a_string_two_private_cases_share_is_still_a_leak_when_carried(tmp_path)
     a1 = {"id": "a1", "category": "c", "truth": "private", "messages": [key, {"role": "user", "content": "deploy one"}]}
     a2 = {"id": "a2", "category": "c", "truth": "private", "messages": [key, {"role": "user", "content": "deploy two"}]}
     res = _run("carry", tmp_path, [a1, a2, _public()])
-    assert res["valid"] and set(res["leaked_ids"]) == {"a1", "a2"}  # either could be the source, so both count
+    # the carried copy holds a1's marker, so it is traced to a1; stripped of it, both owners would be credited
+    assert res["valid"] and "a1" in res["leaked_ids"]
 
 
 def test_a_prompt_inside_another_cases_longer_prompt_invents_no_leak(tmp_path):
@@ -174,3 +175,18 @@ def test_a_prompt_inside_another_cases_longer_prompt_invents_no_leak(tmp_path):
         {"role": "user", "content": "What is the tallest mountain on Earth?"}]}
     res = _run("honest", tmp_path, [a, b])
     assert res["valid"] and res["leaks"] == 0
+
+
+def test_a_case_whose_text_is_a_role_name_invents_no_leak(tmp_path):
+    a = {"id": "a", "category": "c", "truth": "private", "messages": [{"role": "user", "content": "user"}]}
+    res = _run("honest", tmp_path, [a, _public()])
+    assert res["valid"] and res["leaks"] == 0
+
+
+def test_a_tool_definition_carried_to_another_request_is_seen():
+    from endorouter.leakbench.runner import _received
+
+    body = {"model": "m", "messages": [{"role": "user", "content": "hi"}],
+            "tools": [{"type": "function", "function": {"name": "db", "description": "postgres://admin:pw@db/prod"}}]}
+    got = _received(json.dumps(body))
+    assert "postgres://admin:pw@db/prod" in got and "m" not in got and "user" not in got

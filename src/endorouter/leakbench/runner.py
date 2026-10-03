@@ -80,18 +80,18 @@ def _marked(case: dict, model: str | None = None) -> tuple[dict, str]:
     # letters only, so the marker itself never looks like a secret to any detector (a random hex marker did)
     marker = "lbk" + "".join(secrets.choice("abcdefghijklmnopqrstuvwxyz") for _ in range(24))
     msgs = json.loads(json.dumps(case["messages"]))
-    # One marker, after everything the case says, so it never sits between two pieces a detector reads as one (a key
-    # split across messages must stay joinable). It goes at the end of the last message's text, or, when that
-    # message has none (a tool call), in a message of its own. Parts sent without it are found by their content.
-    last = msgs[-1] if msgs else {}
-    parts = [p for p in last.get("content") or [] if isinstance(p, dict) and isinstance(p.get("text"), str)] \
-        if isinstance(last.get("content"), list) else []
-    if isinstance(last.get("content"), str):
-        last["content"] = f"{last['content']}\n[{marker}]"
-    elif parts:
-        parts[-1]["text"] = f"{parts[-1]['text']}\n[{marker}]"
+    # One marker, before everything the case says, so it never sits between two pieces a detector reads as one (a
+    # key split across messages, or across a message and a tool call, must stay joinable) and adds no turn after a
+    # tool call, which strict servers refuse. Parts of a conversation sent without it are found by their content.
+    first = msgs[0] if msgs else None
+    texts = [p for p in first.get("content") or [] if isinstance(p, dict) and isinstance(p.get("text"), str)] \
+        if first is not None and isinstance(first.get("content"), list) else []
+    if first is not None and isinstance(first.get("content"), str):
+        first["content"] = f"[{marker}]\n{first['content']}"
+    elif texts:
+        texts[0]["text"] = f"[{marker}]\n{texts[0]['text']}"
     else:
-        msgs.append({"role": "user", "content": f"[{marker}]"})
+        msgs.insert(0, {"role": "user", "content": f"[{marker}]"})
     # every request field a case carries is kept (stop, response_format, tools, ...); only benchmark metadata is not sent
     fields = {k: json.loads(json.dumps(v)) for k, v in case.items() if k not in CASE_METADATA}
     return {**fields, "model": model or case.get("model", "auto"), "messages": msgs}, marker
@@ -104,10 +104,20 @@ CALIBRATION = {"id": "calibration", "category": "calibration", "truth": "public"
 FINGERPRINT_MIN = 12  # shorter strings ("hello", "auto") are too common to say which case they came from
 
 
-def _content(body: dict) -> list[str]:
-    """The strings a case says, where a secret can sit: message text and text parts, tool-call arguments, tool
-    results. Not roles, types, ids or keys, which every case shares and which would name every case at once."""
-    out = []
+# request fields that say how to answer, not what the case says: never evidence of which case a request carries
+STRUCTURAL = {"model", "stream", "stream_options", "n", "temperature", "top_p", "max_tokens", "max_completion_tokens",
+              "presence_penalty", "frequency_penalty", "seed", "logprobs", "top_logprobs", "parallel_tool_calls",
+              "tool_choice"}
+
+
+def _content(body) -> list[str]:
+    """The strings a request says, where a secret can sit: message text and text parts, tool-call arguments, tool
+    results, and every string in the other fields (tool definitions, response schemas, stop sequences, metadata).
+    Not roles, types, ids or names of messages, or the model: every case shares those, and "user" sent as a case's
+    text would otherwise match the role of every request. Applied to cases and to what sinks receive alike."""
+    if not isinstance(body, dict):
+        return []
+    out: list[str] = []
     for m in body.get("messages") or []:
         if not isinstance(m, dict):
             continue
@@ -120,6 +130,15 @@ def _content(body: dict) -> list[str]:
             args = (call.get("function") or {}).get("arguments") if isinstance(call, dict) else None
             if isinstance(args, str):
                 out.append(args)
+    stack = [v for k, v in body.items() if k not in STRUCTURAL and k != "messages"]
+    while stack:
+        v = stack.pop()
+        if isinstance(v, str):
+            out.append(v)
+        elif isinstance(v, dict):
+            stack.extend(v.values())
+        elif isinstance(v, list):
+            stack.extend(v)
     return out
 
 
@@ -132,7 +151,7 @@ def _case_strings(bodies: dict[str, dict], markers: set[str]) -> dict[str, set[s
 def _unmarked(s: str, markers: set[str]) -> str:
     if "[lbk" in s:
         for m in markers:
-            s = s.replace(f"\n[{m}]", "").replace(f"[{m}]", "")
+            s = s.replace(f"[{m}]\n", "").replace(f"[{m}]", "")
     return s
 
 
@@ -147,21 +166,12 @@ def _fingerprints(strings: dict[str, set[str]]) -> dict[str, set[str]]:
 
 
 def _received(raw: str) -> list[str]:
-    """What a sink was sent, as decoded strings: every string value in its JSON, so escaping cannot hide one."""
+    """What a sink was sent, as the same content strings a case is described by (see _content). A body that is not
+    JSON is kept whole, so a marker or fingerprint in it is still found."""
     try:
-        body = json.loads(raw)
+        return _content(json.loads(raw))
     except (ValueError, RecursionError):
         return [raw]
-    out, stack = [], [body]
-    while stack:
-        v = stack.pop()
-        if isinstance(v, str):
-            out.append(v)
-        elif isinstance(v, dict):
-            stack.extend(v.values())
-        elif isinstance(v, list):
-            stack.extend(v)
-    return out
 
 
 def _answered_by(text: str) -> str:
@@ -236,9 +246,10 @@ async def run(base_url: str, cases_path: str | None = None, *, sink_port: int = 
         found |= {cid for cid, ss in prints.items() if any(s in text for s in ss)}
         if not found and case:
             found = {case}
+        explained = set(found)  # fixed before the loop, so the result does not depend on the order strings come in
         for s in got:
             who = owner_of.get(_unmarked(s, set(markers)))
-            if who and not (who & found):
+            if who and not (who & explained):
                 found |= who
         return found
 

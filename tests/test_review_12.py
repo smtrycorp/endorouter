@@ -173,7 +173,31 @@ def test_a_classifier_that_never_read_the_text_is_not_reported_as_a_recipient(tm
         {"id": "c1", "type": "function", "function": {"name": "f", "arguments": "IAIOSFODNN7EXAMPLE"}}]},
 ])
 def test_the_marker_never_splits_a_key_whatever_the_last_message_is(last):
+    # including an assistant message with empty text and a tool call, and with no extra turn after the tool call
     case = {"id": "s", "category": "c", "truth": "private", "messages": [{"role": "user", "content": "AK"}, last]}
     assert scan_request({"messages": case["messages"]})
     body, marker = _marked(case)
-    assert scan_request(body) and marker in json.dumps(body["messages"][-1])
+    assert scan_request(body) and marker in json.dumps(body["messages"][0])  # before everything
+
+
+@pytest.mark.parametrize("msgs", [
+    [{"role": "user", "content": "deploy with key AK"}, {"role": "assistant", "content": "", "tool_calls": [
+        {"id": "c1", "type": "function", "function": {"name": "deploy", "arguments": "IAIOSFODNN7EXAMPLE"}}]}],
+    [{"role": "assistant", "content": "AK", "tool_calls": [
+        {"id": "c1", "type": "function", "function": {"name": "deploy", "arguments": "IAIOSFODNN7EXAMPLE"}}]}],
+])
+def test_the_marker_never_splits_text_from_a_following_tool_call(msgs):
+    case = {"id": "s", "category": "c", "truth": "private", "label": "public", "messages": msgs}
+    assert scan_request({"messages": msgs})
+    body, _ = _marked(case)
+    assert scan_request(body)
+    assert body["messages"][-1].get("tool_calls")  # no turn added after the tool call
+
+
+def test_no_dispatch_record_when_the_classifier_is_not_sent_the_text(tmp_path):
+    cfg = _balanced(tmp_path)
+    router = Router(cfg, client=httpx.AsyncClient(transport=httpx.MockTransport(
+        lambda r: httpx.Response(200, json={"choices": [{"message": {"content": "PRIVATE"}}]})), trust_env=False))
+    asyncio.run(router.route({"model": "auto", "messages": [{"role": "user", "content": "x" * 12001}]}))
+    log = open(cfg.audit_log).read()
+    assert "classifier_dispatch" not in log and "too_long" in log

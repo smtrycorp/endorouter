@@ -99,12 +99,17 @@ class Router:
             # unverified port means no verdict (which never grants anything)
             if ct is not None and (not (ct.verify_program or ct.ollama_api)
                                    or await self._still_verified(ct, request_id or "")):
-                self.audit.write({"event": "classifier_dispatch", "request_id": request_id, "target": ct.name})
+                def dispatching() -> None:
+                    # written only when the text is about to leave, and before it does
+                    self.audit.write({"event": "classifier_dispatch", "request_id": request_id, "target": ct.name})
+                    if sent is not None:
+                        sent.append(ct.name)
+
                 verdict = await classify(
                     self.cfg, body, self.client,
                     on_failure=lambda kind: self.audit.write(
                         {"event": "classifier_failed", "request_id": request_id, "kind": kind}),
-                    on_send=None if sent is None else lambda: sent.append(ct.name))
+                    on_send=dispatching)
         d = decide(
             self.cfg,
             requested_model=body.get("model"),
