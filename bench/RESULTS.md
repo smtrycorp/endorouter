@@ -1,6 +1,6 @@
 # leakbench results, 2026-10-02
 
-Every result here was produced by commit `3d4dc07`; `bench/run-info-*.txt` records the commit of each run.
+Every result here was produced by commit `702d7cb`; `bench/run-info-*.txt` records the commit of each run.
 
 29 cases: 24 private, 5 public. Every result is measured at the recording sinks.
 
