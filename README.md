@@ -128,4 +128,4 @@ Results are in [bench/RESULTS.md](bench/RESULTS.md), with the commands to reprod
 
 Version 0.1, pre-release. macOS and Linux. Text chat completions, with and without streaming. Not yet supported: images, audio, embeddings and the Responses API. Requests that use them are refused rather than passed through. Known gap: base64 wrapped across lines (as in PEM or MIME bodies) is not reassembled before decoding.
 
-Licence: [Apache-2.0](LICENSE). Security reports: see [SECURITY.md](SECURITY.md). Contact: hello@smtry.ai.
+Licence: [Apache-2.0](LICENSE), copyright 2026 J. I. Ashley Consulting LLC. Security reports: see [SECURITY.md](SECURITY.md). Contact: hello@smtry.ai.
