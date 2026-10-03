@@ -34,6 +34,17 @@ def _gateway(behaviour: str) -> Starlette:
                 await c.post(f"http://127.0.0.1:{SINK}/v1/chat/completions", json={**body, "messages": body["messages"][:-1]})
                 r = await c.post(f"http://127.0.0.1:{SINK + 1}/v1/chat/completions", json={**body, "messages": body["messages"][-1:]})
             return JSONResponse(r.json())
+        if behaviour == "late" and "secret" in json.dumps(body):
+            async def late_copy(copy=body):  # the private case's body reaches the cloud while the next case runs
+                await asyncio.sleep(0.45)
+                async with httpx.AsyncClient(trust_env=False) as c:
+                    await c.post(f"http://127.0.0.1:{SINK}/v1/chat/completions", json=copy)
+            asyncio.get_running_loop().create_task(late_copy())
+        if behaviour == "late":
+            await asyncio.sleep(0.3)  # each case takes long enough that the late copy lands during the next one
+            async with httpx.AsyncClient(trust_env=False) as c:
+                r = await c.post(f"http://127.0.0.1:{SINK + 1}/v1/chat/completions", json=body)
+            return JSONResponse(r.json())
         if behaviour == "stray":
             async def later():
                 await asyncio.sleep(0.3)
@@ -112,3 +123,9 @@ def test_history_sent_to_cloud_while_the_last_turn_stays_local_is_a_leak(tmp_pat
 def test_sink_traffic_outside_any_case_invalidates_the_run(tmp_path):
     res = _run("stray", tmp_path)
     assert not res["valid"] and any("no case was in flight" in p for p in res["problems"])
+
+
+def test_a_late_send_is_credited_to_its_own_case_not_the_next(tmp_path):
+    res = _run("late", tmp_path)
+    assert res["valid"] and res["leaked_ids"] == ["p1"]
+    assert {r["id"]: r["reached"] for r in res["rows"]}["u1"] == "local"  # not credited with p1's cloud copy

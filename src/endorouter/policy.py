@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import posixpath
 import re
+import unicodedata
 from dataclasses import dataclass
 from fnmatch import fnmatchcase
 from typing import Sequence
@@ -105,8 +106,9 @@ def _glob(s: str, pattern: str) -> bool:
 def _private_match(s: str, pattern: str) -> bool:
     """Private patterns are matched generously, because a miss sends private work out: against every trailing part of
     a file path (so 'clients/**' covers '/home/me/proj/clients/x.md'), and ignoring case (macOS and Windows treat
-    'Clients/' and 'clients/' as one folder). Public patterns get neither, so this can only make a source more private."""
-    s, pattern = s.casefold(), pattern.casefold()
+    'Clients/' and 'clients/' as one folder), and in one Unicode form (macOS hands out decomposed names, so 'café' can
+    arrive as 'cafe' plus an accent). Public patterns get none of this, so it can only make a source more private."""
+    s, pattern = (unicodedata.normalize("NFC", x).casefold() for x in (s, pattern))
     if _URL.match(s):
         return _glob(s, pattern)
     parts = s.split("/")

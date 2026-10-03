@@ -6,6 +6,8 @@ before they are iterated, so a malformed body is a 400, never a crash.
 
 from __future__ import annotations
 
+import re
+
 
 class InvalidRequest(ValueError):
     pass
@@ -22,10 +24,32 @@ ROLES = {"system", "developer", "user", "assistant", "tool"}
 MESSAGE_FIELDS = {"role", "content", "name", "tool_calls", "tool_call_id", "refusal"}
 
 
+_SURROGATE = re.compile("[\ud800-\udfff]")
+
+
+def _lone_surrogate(body) -> bool:
+    """A lone UTF-16 surrogate splits a key so no detector sees it, yet an upstream parser may turn it into U+FFFD and
+    the model reads the key whole. No valid text contains one. Iterative, so nesting depth cannot crash the walk."""
+    stack = [body]
+    while stack:
+        v = stack.pop()
+        if isinstance(v, str):
+            if _SURROGATE.search(v):
+                return True
+        elif isinstance(v, dict):
+            stack.extend(v.keys())
+            stack.extend(v.values())
+        elif isinstance(v, list):
+            stack.extend(v)
+    return False
+
+
 def validate(body) -> str | None:
     """Strict shape check: anything this version does not understand is refused, never forwarded unexamined."""
     if not isinstance(body, dict):
         return "request body must be a JSON object"
+    if _lone_surrogate(body):
+        return "the request contains a lone UTF-16 surrogate, which is not valid text"
     extra = set(body) - SUPPORTED_FIELDS
     if extra:
         return f"unsupported field(s) {sorted(extra)} (endorouter v0.1 supports text chat completions)"

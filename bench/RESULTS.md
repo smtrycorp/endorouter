@@ -68,7 +68,9 @@ In balanced mode, unlabelled work may go to the cloud when no detector fires and
 | EndoRouter, balanced, local 30B classifier | 0 of 15 | 0 of 8 |
 | LiteLLM 1.103.1, content filter | 15 of 15 | 1 of 8 (a keyword block on the NDA question) |
 
-**The first balanced run on this suite leaked 1 of 10.** It was the key split across two messages. No single string held a whole key, so no detector fired, and the classifier called the conversation public. We added two detector rules. The first flags a distinctive issuer prefix standing on its own, such as `AKIAIOSF`. The second rejoins text typed out letter by letter. The rerun above leaked none.
+The strict zero here holds by construction, as on the main suite: none of these cases is labelled, so none can go to the cloud in strict mode. The balanced zero is the one the detectors and classifier earn.
+
+**The first balanced run on this suite leaked 1 of 10.** The suite then had 10 private cases; the other 5 were added afterwards. It was the key split across two messages. No single string held a whole key, so no detector fired, and the classifier called the conversation public. We added two detector rules. The first flags a distinctive issuer prefix standing on its own, such as `AKIAIOSF`. The second rejoins text typed out letter by letter. The rerun above leaked none.
 
 The three unknown-vendor keys are caught by a rule with no vendor list, described in the README. While adding it we found that leakbench's own random hex markers looked like secrets to that rule, which made 6 public cases look private. Markers are now random lowercase letters, and a test checks that no marker trips a detector.
 

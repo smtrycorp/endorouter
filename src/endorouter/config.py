@@ -68,6 +68,12 @@ class Config:
             if t.is_local and t.model == "*":
                 # a client could name any model, including one a local server forwards to its own cloud
                 raise ConfigError(f"targets.{t.name}: a local target must name its model; '*' is for cloud targets")
+        if self.classifier.enabled:
+            ct = self.target(self.classifier.target or "")
+            if ct is None or not ct.is_local:
+                raise ConfigError("classifier.target must name a local target (the classifier reads private text)")
+        if self.mode == "balanced" and not self.classifier.enabled:
+            raise ConfigError("mode 'balanced' needs the local classifier enabled: nothing else may clear unlabelled text")
 
     def target(self, name: str) -> Target | None:
         return next((t for t in self.targets if t.name == name), None)
@@ -177,14 +183,7 @@ def parse_config(raw: dict) -> Config:
     audit_log = _opt_str(raw.get("audit_log", "endorouter.log.jsonl"), "audit_log")
     if audit_log is None:  # written as null: a router with nowhere to record decisions must not start
         raise ConfigError("audit_log must be a non-empty string")
-    cfg = Config(targets=tuple(targets), mode=mode, audit_log=audit_log, provenance=prov, classifier=clf)
-    if clf.enabled:
-        ct = cfg.target(clf.target or "")
-        if ct is None or not ct.is_local:
-            raise ConfigError("classifier.target must name a local target (the classifier reads private text)")
-    if mode == "balanced" and not clf.enabled:
-        raise ConfigError("mode 'balanced' needs the local classifier enabled: nothing else may clear unlabelled text")
-    return cfg
+    return Config(targets=tuple(targets), mode=mode, audit_log=audit_log, provenance=prov, classifier=clf)
 
 
 class _StrictLoader(yaml.SafeLoader):

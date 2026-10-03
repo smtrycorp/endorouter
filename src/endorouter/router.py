@@ -127,7 +127,7 @@ class Router:
         # it is also the private snapshot a caller cannot change mid-flight.
         try:
             body = json.loads(json.dumps(body, allow_nan=False))
-        except (TypeError, ValueError) as e:
+        except (TypeError, ValueError, RecursionError) as e:
             raise InvalidRequest("the request must be plain JSON: strings, numbers, booleans, lists and objects") from e
         problem = validate(body)
         if problem:  # the same refusal a library caller gets as an HTTP caller
@@ -141,6 +141,15 @@ class Router:
                           **decision.as_record()})
         if decision.selected is None:
             raise Refused(decision, request_id)
+        sent: list[str] = []  # targets that may hold the prompt: from here on, an audit failure is never "nothing sent"
+        try:
+            return await self._dispatch(body, decision, request_id, sent)
+        except AuditError:
+            if not sent:
+                raise
+            raise SentUnrecorded(request_id, ", ".join(sent)) from None
+
+    async def _dispatch(self, body: dict, decision: Decision, request_id: str, sent: list[str]) -> Routed:
         attempts: list[dict] = []
         stream = bool(body.get("stream"))
         for target in permitted_targets(self.cfg, decision):
@@ -161,6 +170,7 @@ class Router:
                     headers["authorization"] = f"Bearer {key}"
             # the actual destination is on disk before each send, including fallbacks
             self.audit.write({"event": "attempt", "request_id": request_id, "target": target.name, "location": target.location})
+            sent.append(target.name)  # a send that fails partway may still have delivered the prompt
             try:
                 req = self.client.build_request("POST", f"{target.url}/chat/completions", json=upstream, headers=headers,
                                                 timeout=target.timeout_s)
@@ -179,7 +189,7 @@ class Router:
                                   "ms": int((time.monotonic() - t0) * 1000)})
             except AuditError:
                 await resp.aclose()
-                raise SentUnrecorded(request_id, target.name) from None
+                raise
             return Routed(request_id, decision, target, resp)
         self.audit.write({"event": "failed", "request_id": request_id, "attempts": attempts})
         raise UpstreamFailed(request_id, attempts)
@@ -191,7 +201,7 @@ class Router:
         try:
             r = await self.client.post(ollama_show_url(target.url), json={"model": target.model})
             info = r.json()
-        except (httpx.HTTPError, json.JSONDecodeError):
+        except (httpx.HTTPError, ValueError):
             return "could not confirm the model runs on this machine"
         return f"model {target.model} is hosted remotely" if remote_from_show(r.status_code, info) else None
 

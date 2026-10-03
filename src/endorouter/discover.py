@@ -51,6 +51,9 @@ def default_audit_log() -> str:
 # port is one of these; anything else (a gateway, a proxy, an app that can call hosted models) could forward prompts
 # to a cloud, so it is reported but never trusted without an explicit `init --trust <name>`.
 LOCAL_INFERENCE_PROGRAMS = {"ollama", "llama-server", "llamafile", "vllm", "mlx_lm", "koboldcpp", "lms"}
+# the ones written in Python, so run as 'python -m <module>' or 'python <script>'; a native program (ollama,
+# llama-server) is never a Python script, so a script by that name is something else wearing its name
+PYTHON_INFERENCE_PROGRAMS = {"vllm", "mlx_lm", "koboldcpp"}
 LOCAL_INFERENCE_APPS = {"LM Studio.app"}  # an app bundle, matched as a whole path component
 
 
@@ -103,13 +106,13 @@ def _program(cmdline: str) -> str | None:
             a = argv[i]
             if a == "-m":
                 mod = argv[i + 1].split(".")[0].lower() if i + 1 < len(argv) else ""
-                return mod if mod in LOCAL_INFERENCE_PROGRAMS else None
+                return mod if mod in PYTHON_INFERENCE_PROGRAMS else None
             if a == "-c" or not a.startswith("-"):
                 break
             i += 2 if a in ("-X", "-W", "-Q") else 1
         if i < len(argv) and not argv[i].startswith("-"):
             base = Path(argv[i]).name.lower()
-            return base if base in LOCAL_INFERENCE_PROGRAMS else None
+            return base if base in PYTHON_INFERENCE_PROGRAMS else None
         return None
     return None
 
@@ -124,6 +127,18 @@ def _run(argv: list[str]) -> str | None:
     return done.stdout if done.returncode == 0 else None
 
 
+def _executable(pid: str) -> str | None:
+    """The file the process runs. On Linux, ps reports /proc/<pid>/comm, a name any process can set for itself (and a
+    script's file name), so the kernel's link to the executable is read instead; a process of another user cannot be
+    read and gives no answer. macOS has no such title to forge: ps reports the executable path."""
+    if Path("/proc/self/exe").exists():
+        try:
+            return os.readlink(f"/proc/{pid}/exe")
+        except OSError:
+            return None
+    return _run(["ps", "-o", "comm=", "-p", pid])
+
+
 def _port_owners(url: str) -> list[str] | None:
     """The command line of every process listening on the url's port, or None if that cannot be determined."""
     port = urlsplit(url).port
@@ -135,7 +150,7 @@ def _port_owners(url: str) -> list[str] | None:
         return None
     owners = []
     for pid in dict.fromkeys(pids):
-        exe, cmd = _run(["ps", "-o", "comm=", "-p", pid]), _run(["ps", "-o", "command=", "-p", pid])
+        exe, cmd = _executable(pid), _run(["ps", "-o", "command=", "-p", pid])
         if not exe or not cmd:  # the process exited between the two checks, or ps failed: no verdict
             return None
         owners.append(f"{exe.strip()}\0{cmd.strip()}")  # executable path, then the full command line

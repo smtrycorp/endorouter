@@ -275,7 +275,7 @@ def test_models_list_shows_pass_through_targets_with_their_request_form(tmp_path
     from endorouter.server import create_app
 
     cfg = _passthrough(tmp_path)
-    ids = [m["id"] for m in TestClient(create_app(cfg)).get("/v1/models").json()["data"]]
+    ids = [m["id"] for m in TestClient(create_app(cfg), base_url="http://127.0.0.1").get("/v1/models").json()["data"]]
     assert "openai/*" in ids and "openai" not in ids
 
 

@@ -5,7 +5,6 @@ None, and None never grants anything."""
 
 from __future__ import annotations
 
-import json
 import re
 import secrets
 from collections.abc import Callable
@@ -62,7 +61,7 @@ async def classify(cfg: Config, body: dict, client: httpx.AsyncClient,
     except httpx.HTTPError as e:
         failed(f"unreachable:{type(e).__name__}")
         return None
-    except (json.JSONDecodeError, KeyError, IndexError, TypeError):
+    except (ValueError, KeyError, IndexError, TypeError):  # ValueError covers bad JSON and bad UTF-8
         failed("malformed_response")
         return None
     m = _VERDICT.fullmatch(answer.strip().upper()) if isinstance(answer, str) else None

@@ -6,6 +6,10 @@ SR=.venv/bin/endorouter
 [ -x "$SR" ] || { echo "missing $SR: run 'python3 -m venv .venv && .venv/bin/pip install -e .' first" >&2; exit 1; }
 [ -x bench/.litellm-venv/bin/litellm ] || { echo "missing bench/.litellm-venv: see bench/RESULTS.md" >&2; exit 1; }
 
+# which code produced these results: the commit, and whether the tree had uncommitted changes
+{ echo "commit $(git rev-parse HEAD)"; [ -z "$(git status --porcelain -- src)" ] || echo "src had uncommitted changes"
+  echo "run $(date -u +%Y-%m-%dT%H:%MZ)"; } > "bench/run-info-$(basename "$0" .sh).txt"
+
 pids=()
 cleanup() { for p in "${pids[@]}"; do kill "$p" 2>/dev/null || true; done; wait 2>/dev/null || true; }
 trap cleanup EXIT

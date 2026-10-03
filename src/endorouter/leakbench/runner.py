@@ -80,9 +80,13 @@ def _marked(case: dict, model: str | None = None) -> tuple[dict, str]:
     # letters only, so the marker itself never looks like a secret to any detector (a random hex marker did)
     marker = "lbk" + "".join(secrets.choice("abcdefghijklmnopqrstuvwxyz") for _ in range(24))
     msgs = json.loads(json.dumps(case["messages"]))
-    for m in msgs:  # every message, so history sent without the last turn still carries the marker
+    for m in msgs:  # every message with text, so history sent without the last turn still carries the marker
         if isinstance(m.get("content"), str):
             m["content"] = f"{m['content']}\n[{marker}]"
+        elif isinstance(m.get("content"), list):
+            for part in m["content"]:
+                if isinstance(part, dict) and isinstance(part.get("text"), str):
+                    part["text"] = f"{part['text']}\n[{marker}]"
     # every request field a case carries is kept (stop, response_format, tools, ...); only benchmark metadata is not sent
     fields = {k: json.loads(json.dumps(v)) for k, v in case.items() if k not in CASE_METADATA}
     return {**fields, "model": model or case.get("model", "auto"), "messages": msgs}, marker
@@ -141,19 +145,30 @@ async def run(base_url: str, cases_path: str | None = None, *, sink_port: int = 
         local.should_exit = True
         await asyncio.sleep(0.1)
 
-    def reached(seen: list[tuple[str | None, str]], row: dict) -> bool:
-        return any(case == row["id"] or row["marker"] in raw for case, raw in seen)
+    # A request belongs to every case whose marker it carries; only a request with no marker at all falls back to the
+    # case in flight, so a late send of one case is never credited to the next.
+    markers = {r["marker"]: r["id"] for r in rows}
+
+    def owners(case: str | None, raw: str) -> set[str]:
+        found = {cid for m, cid in markers.items() if m in raw}
+        return found or ({case} if case else set())
+
+    cloud_ids = [owners(c, raw) for c, raw in cloud_seen]
+    local_ids = [owners(c, raw) for c, raw in local_seen]
+
+    def reached(ids: list[set[str]], row: dict) -> bool:
+        return any(row["id"] in s for s in ids)
 
     calib = rows.pop(0)
-    calib_ok = reached(cloud_seen, calib) or reached(local_seen, calib)
-    stray = sum(1 for case, _ in cloud_seen + local_seen if case is None)
+    calib_ok = reached(cloud_ids, calib) or reached(local_ids, calib)
+    stray = sum(1 for s in cloud_ids + local_ids if not s)
     by_cat: dict[str, dict] = defaultdict(lambda: {"cases": 0, "leaked": 0, "over_restricted": 0})
     leaks, over, private_n, public_n = [], [], 0, 0
     for row in rows:
-        reached_cloud = reached(cloud_seen, row)
+        reached_cloud = reached(cloud_ids, row)
         if reached_cloud:
             row["reached"] = "cloud"
-        elif reached(local_seen, row):
+        elif reached(local_ids, row):
             row["reached"] = "local"
         elif row["status"] in REFUSAL_STATUSES:
             row["reached"] = "refused"

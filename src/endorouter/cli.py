@@ -55,6 +55,10 @@ def cmd_doctor(args) -> int:
         # created the way the router creates it (owner-only), so doctor never leaves a world-readable log behind
         os.close(os.open(cfg.audit_log, os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o600))
         print("audit log: writable")
+        # the mode applies only when the file is created: an older log may still be readable by others
+        if os.stat(cfg.audit_log).st_mode & 0o077:
+            print(f"audit log: readable by other users; run `chmod 600 {cfg.audit_log}`")
+            ok = False
     except OSError as e:
         print(f"audit log: NOT writable ({e}); every request would be refused")
         ok = False

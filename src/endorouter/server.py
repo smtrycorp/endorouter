@@ -7,8 +7,8 @@ Provenance travels in headers:
 Headers that could LOOSEN routing (sources, a public label) are honoured only from provenance.trusted_clients.
 A private label is honoured from anyone: tightening is always safe.
 
-Only requests addressed to this machine by a loopback name are served, so a web page cannot reach the router through
-DNS rebinding. v0.1 accepts text chat only; unknown request fields and non-text content parts are rejected rather
+Only requests addressed to this machine by a loopback name, and carrying no browser Origin, are served: a web page can
+reach neither through DNS rebinding nor by a cross-site POST, and every caller on this machine looks like 127.0.0.1. v0.1 accepts text chat only; unknown request fields and non-text content parts are rejected rather
 than silently dropped.
 """
 
@@ -34,6 +34,8 @@ from .validate import validate as _validate
 
 MAX_BODY = 4 * 1024 * 1024  # bytes; read no further, so a huge body cannot exhaust memory before it is refused
 LOOPBACK_HOSTS = {"localhost", "127.0.0.1", "::1"}
+# a source is a path or URL; matching cost grows with its segments, so an oversized one is treated as private unread
+MAX_SOURCE_CHARS, MAX_SOURCES = 1024, 64
 
 
 def _error(status: int, message: str, **extra) -> JSONResponse:
@@ -50,7 +52,8 @@ def _host(header: str) -> str:
 async def _read_body(request: Request) -> bytes | None:
     """The body, or None when it is larger than MAX_BODY."""
     declared = request.headers.get("content-length", "")
-    if declared.isdigit() and int(declared) > MAX_BODY:
+    # length first: int() refuses strings over 4300 digits, and anything over 9 digits is too large anyway
+    if declared.isdigit() and (len(declared) > 9 or int(declared) > MAX_BODY):
         return None
     chunks, size = [], 0
     async for chunk in request.stream():
@@ -66,14 +69,15 @@ def create_app(cfg: Config, router: Router | None = None) -> Starlette:
     _table()  # build the detector normalisation table now, not on the first request
 
     async def chat(request: Request):
-        if _host(request.headers.get("host", "")).lower() not in LOOPBACK_HOSTS:
-            return _error(421, "this router answers only requests addressed to localhost, 127.0.0.1 or [::1]")
+        # application/json cannot be sent cross-site without a CORS preflight, which this server never answers
+        if request.headers.get("content-type", "").split(";")[0].strip().lower() != "application/json":
+            return _error(415, "content-type must be application/json")
         raw = await _read_body(request)
         if raw is None:
             return _error(413, f"request body over {MAX_BODY // (1024 * 1024)} MB")
         try:
             body = json.loads(raw)
-        except (json.JSONDecodeError, UnicodeDecodeError):
+        except (ValueError, RecursionError):  # bad JSON or UTF-8, a number too long to convert, or absurd nesting
             return _error(400, "invalid JSON")
         problem = _validate(body)
         if problem:
@@ -92,7 +96,9 @@ def create_app(cfg: Config, router: Router | None = None) -> Starlette:
         # piece that is private tightens the request, whoever sent it, which is always safe.
         raw_sources = [v.strip() for v in request.headers.getlist("x-endorouter-source") if v.strip()]
         pieces = {p.strip() for v in raw_sources for p in v.split(",") if p.strip()} | set(raw_sources)
-        if any(source_label(s, cfg)[0] is Label.PRIVATE for s in pieces):
+        if len(pieces) > MAX_SOURCES or any(len(s) > MAX_SOURCE_CHARS for s in pieces):
+            label, raw_sources = Label.PRIVATE, []  # too large to match cheaply: the safe reading, unread
+        elif any(source_label(s, cfg)[0] is Label.PRIVATE for s in pieces):
             label = Label.PRIVATE
         if not trusted:
             raw_sources = []  # an untrusted caller's sources could only lift a label, so they are not used
@@ -144,8 +150,24 @@ def create_app(cfg: Config, router: Router | None = None) -> Starlette:
     async def health(_request: Request):
         return JSONResponse({"ok": True, "version": __version__, "mode": cfg.mode})
 
-    return Starlette(routes=[
+    app = Starlette(routes=[
         Route("/v1/chat/completions", chat, methods=["POST"]),
         Route("/v1/models", models, methods=["GET"]),
         Route("/healthz", health, methods=["GET"]),
     ])
+    return _local_only(app)
+
+
+def _local_only(app):
+    """Every route, not just chat: the target list and mode are this machine's business. A browser always sends
+    Origin on a cross-site request and on any POST; local clients (SDKs, curl, editors) do not."""
+    async def guard(scope, receive, send):
+        if scope["type"] == "http":
+            headers = {k.decode("latin-1").lower(): v.decode("latin-1") for k, v in scope.get("headers") or []}
+            if _host(headers.get("host", "")).lower() not in LOOPBACK_HOSTS:
+                return await _error(421, "this router answers only requests addressed to localhost, 127.0.0.1 or "
+                                         "[::1]")(scope, receive, send)
+            if "origin" in headers:
+                return await _error(403, "requests from web pages are refused")(scope, receive, send)
+        await app(scope, receive, send)
+    return guard
