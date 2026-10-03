@@ -92,7 +92,7 @@ The strict-mode zeros above hold by construction: unlabelled work never goes to 
 | EndoRouter, balanced | 0 of 7 | 0 of 5 | 0 of 2 |
 | LiteLLM 1.103.1, content filter | 3 of 7 | 5 of 5 | 0 of 2 |
 
-We predicted the strict and LiteLLM rows before the run. We predicted balanced mode would also leak all 5 misses, and it leaked none: in balanced mode the local classifier reads every request that no detector flagged, public labels included, and it can only tighten. It called all 5 private. That catch depends on the classifier model and is not guaranteed; the strict row is what the detectors alone do. LiteLLM receives no provenance headers, so for it these are ordinary requests; its 4 refusals were its content filter.
+We predicted the strict and LiteLLM rows before the run. We predicted balanced mode would also leak all 5 misses, and it leaked none: in balanced mode the local classifier reads every request, public labels included, and its verdict can only tighten. It called all 5 private. That catch depends on the classifier model and is not guaranteed; the strict row is what the detectors alone do. LiteLLM receives no provenance headers, so for it these are ordinary requests; its 4 refusals were its content filter.
 
 ## How LiteLLM was configured
 
