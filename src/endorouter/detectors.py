@@ -127,13 +127,13 @@ def _jwt(token: str) -> bool:
         return False
     try:
         head = json.loads(base64.urlsafe_b64decode(parts[0] + "=" * (-len(parts[0]) % 4)))
-    except Exception:  # noqa: BLE001
+    except (ValueError, RecursionError):  # bad base64, bad UTF-8, bad JSON (all ValueError), or absurdly deep JSON
         return False
     return isinstance(head, dict) and "alg" in head
 
 
-# (rule id, pattern, optional validator). Prefixes are the issuers' documented token formats. Every repetition is
-# bounded so a match attempt costs constant time and a large input scans in linear time (no quadratic backtracking).
+# (rule id, pattern, optional validator). Prefixes are the issuers' documented token formats. Repetitions are bounded,
+# or cannot overlap, so a large input scans in linear time; tests/test_review_10.py holds the adversarial inputs.
 _RULES: list[tuple[str, re.Pattern, object]] = [
     ("private_key", re.compile(r"-----BEGIN (?:[A-Z0-9 ]{1,64} )?PRIVATE KEY-----"), None),
     ("aws_access_key", re.compile(r"\b(?:AKIA|ASIA)[0-9A-Z]{16}\b"), None),
@@ -174,9 +174,8 @@ def _scan_normalised(t: str, where: str) -> Iterator[Finding]:
 # No vendor prefixes and no words: a token is secret-shaped when it is long, mixes character classes the way random
 # generators do, switches between classes often, has near-maximal character entropy, and is not made of word-like
 # lowercase runs (identifiers). Bare hex is ambiguous with digests, so it counts only where credentials are placed
-# (NAME=value, Bearer) or with a vendor-style prefix glued on. Measured 2026-09-30 on 660 synthetic keys from made-up
-# vendors (81% overall, 97%+ for base62/base64 shapes, ~45% for bare hex) and 16.8 MB of public source, docs and
-# lockfiles (4.2 false alarms per MB). This rule catches keys from vendors nobody has written a pattern for.
+# (NAME=value, Bearer) or with a vendor-style prefix glued on. This rule catches keys from vendors nobody has written a
+# pattern for; bench/shape_eval.py measures how often, and how often it fires on public code.
 _SHAPE_TOKEN = re.compile(r"(?<![A-Za-z0-9+/_=.\-])[A-Za-z0-9+/_=.\-]{20,512}(?![A-Za-z0-9+/_=.\-])")
 _UUID = re.compile(r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
 _DIGEST = re.compile(r"^(?:sha(?:1|224|256|384|512)|md5|blake2[bs]?|blake3|sha3-(?:256|512))[-:=]", re.IGNORECASE)
@@ -186,7 +185,7 @@ _CRED_PLACE = re.compile(r"(?:^|[\s;])(?:export\s+)?[A-Z][A-Z0-9_]{2,63}\s*[=:]\
 
 def _secret_shaped(tok: str, before: str) -> bool:
     # tokens with '/' are scored like any other (base64 keys and webhook URLs have them); paths are left alone by the
-    # word-like rule below. Measured: 177/182 slash-bearing keys found, false alarms unchanged at 1.0/MB.
+    # word-like rule below
     if _UUID.match(tok) or _DIGEST.match(tok):
         return False
     if tok.count(".") >= 2 and not any(c.isdigit() for c in tok):
@@ -205,7 +204,7 @@ def _secret_shaped(tok: str, before: str) -> bool:
     if sum(len(r) for r in re.findall(r"[a-z]{4,}", tok)) / n > 0.35:
         return False
     kinds = [("d" if c.isdigit() else "u" if c.isupper() else "l") for c in core]
-    switch = sum(a != b for a, b in zip(kinds, kinds[1:])) / (n - 1)
+    switch = sum(a != b for a, b in zip(kinds, kinds[1:], strict=False)) / (n - 1)
     counts: dict[str, int] = {}
     for c in core:
         counts[c] = counts.get(c, 0) + 1
@@ -221,7 +220,9 @@ _CRED_VALUE = [
     # a quoted JSON pair, any case: "db_password": "..."
     re.compile(r"[\"'][A-Za-z_][A-Za-z0-9_.\-]{1,63}[\"']\s*:\s*([\"'])([^\s'\"]{16,256})\1"),
     # a YAML key with a quoted value, any case: password: "..."
-    re.compile(r"(?m)^\s*-?\s*[A-Za-z_][A-Za-z0-9_.\-]{1,63}\s*:\s*([\"'])([^\s'\"]{16,256})\1\s*$"),
+    # indentation, then an optional list dash: two runs that can never both match the same space, so a line of
+    # spaces is read once rather than split every possible way (that split was quadratic)
+    re.compile(r"(?m)^[ \t]*(?:-[ \t]*)?[A-Za-z_][A-Za-z0-9_.\-]{1,63}[ \t]*:[ \t]*([\"'])([^\s'\"]{16,256})\1[ \t]*$"),
 ]
 
 

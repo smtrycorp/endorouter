@@ -26,6 +26,7 @@ class Target:
     api_key_env: str | None = None  # name of an environment variable holding the key; never the key itself
     timeout_s: float = 120.0
     verify_program: str | None = None  # set by discovery: the local-inference program that must own this port
+    ollama_api: bool = False  # set by discovery: the server speaks Ollama's API, so the model's locality is re-asked
 
     @property
     def is_local(self) -> bool:
@@ -54,6 +55,20 @@ class Config:
     provenance: Provenance = field(default_factory=Provenance)
     classifier: Classifier = field(default_factory=Classifier)
 
+    def __post_init__(self) -> None:
+        # Checked here, not only in parse_config: a library caller building a Config directly must get the same
+        # guarantees, since policy names targets and dispatch looks them up by name.
+        names = [t.name for t in self.targets]
+        dup = next((n for n in names if names.count(n) > 1), None)
+        if dup is not None:
+            raise ConfigError(f"target name '{dup}' is used twice")
+        if not any(t.is_local for t in self.targets):
+            raise ConfigError("at least one local target is required (private and unknown work has nowhere else to go)")
+        for t in self.targets:
+            if t.is_local and t.model == "*":
+                # a client could name any model, including one a local server forwards to its own cloud
+                raise ConfigError(f"targets.{t.name}: a local target must name its model; '*' is for cloud targets")
+
     def target(self, name: str) -> Target | None:
         return next((t for t in self.targets if t.name == name), None)
 
@@ -66,10 +81,6 @@ def _only(d: dict, allowed: set[str], where: str) -> None:
     extra = set(d) - allowed
     if extra:
         raise ConfigError(f"{where}: unknown field(s) {sorted(extra)}; allowed: {sorted(allowed)}")
-
-
-def _missing(where: str):
-    raise ConfigError(f"{where} must be a non-empty string")
 
 
 def _bool(v: Any, where: str, default: bool) -> bool:
@@ -104,6 +115,15 @@ def _strs(v: Any, where: str) -> tuple[str, ...]:
     return tuple(v)
 
 
+def _section(raw: dict, name: str) -> dict:
+    """An optional mapping. Written but not a mapping (false, [], 0) is an error, never the defaults."""
+    if name not in raw or raw[name] is None:
+        return {}
+    if not isinstance(raw[name], dict):
+        raise ConfigError(f"{name} must be a mapping")
+    return raw[name]
+
+
 def parse_config(raw: dict) -> Config:
     if not isinstance(raw, dict):
         raise ConfigError("config must be a mapping")
@@ -120,7 +140,8 @@ def parse_config(raw: dict) -> Config:
     for name, t in traw.items():
         if not isinstance(t, dict):
             raise ConfigError(f"targets.{name}: expected a mapping")
-        _only(t, {"url", "model", "location", "capabilities", "api_key_env", "timeout_s", "verify_program"}, f"targets.{name}")
+        _only(t, {"url", "model", "location", "capabilities", "api_key_env", "timeout_s", "verify_program", "ollama_api"},
+              f"targets.{name}")
         for k in ("url", "model", "location"):
             if not isinstance(t.get(k), str) or not t[k]:
                 raise ConfigError(f"targets.{name}.{k} is required")
@@ -138,23 +159,25 @@ def parse_config(raw: dict) -> Config:
                 api_key_env=_opt_str(t.get("api_key_env"), f"targets.{name}.api_key_env"),
                 timeout_s=_seconds(t.get("timeout_s"), f"targets.{name}.timeout_s", 120.0),
                 verify_program=_opt_str(t.get("verify_program"), f"targets.{name}.verify_program"),
+                ollama_api=_bool(t.get("ollama_api"), f"targets.{name}.ollama_api", False),
             )
         )
-    if not any(t.is_local for t in targets):
-        raise ConfigError("config: at least one local target is required (private and unknown work has nowhere else to go)")
-    praw = raw.get("provenance") or {}
+    praw = _section(raw, "provenance")
     _only(praw, {"public_sources", "private_sources", "trusted_clients"}, "provenance")
     prov = Provenance(
         public_sources=_strs(praw.get("public_sources"), "provenance.public_sources"),
         private_sources=_strs(praw.get("private_sources"), "provenance.private_sources"),
         trusted_clients=_strs(praw.get("trusted_clients", ["127.0.0.1", "::1"]), "provenance.trusted_clients"),
     )
-    craw = raw.get("classifier") or {}
+    craw = _section(raw, "classifier")
     _only(craw, {"enabled", "target", "timeout_s"}, "classifier")
     clf = Classifier(enabled=_bool(craw.get("enabled"), "classifier.enabled", False),
                      target=_opt_str(craw.get("target"), "classifier.target"),
                      timeout_s=_seconds(craw.get("timeout_s"), "classifier.timeout_s", 30.0))
-    cfg = Config(targets=tuple(targets), mode=mode, audit_log=_opt_str(raw.get("audit_log", "endorouter.log.jsonl"), "audit_log") or _missing("audit_log"), provenance=prov, classifier=clf)
+    audit_log = _opt_str(raw.get("audit_log", "endorouter.log.jsonl"), "audit_log")
+    if audit_log is None:  # written as null: a router with nowhere to record decisions must not start
+        raise ConfigError("audit_log must be a non-empty string")
+    cfg = Config(targets=tuple(targets), mode=mode, audit_log=audit_log, provenance=prov, classifier=clf)
     if clf.enabled:
         ct = cfg.target(clf.target or "")
         if ct is None or not ct.is_local:

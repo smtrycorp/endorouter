@@ -1,20 +1,22 @@
 #!/usr/bin/env bash
-# The harder suite (cases-hard.jsonl) against strict, balanced and LiteLLM. Same prerequisites as run_all.sh.
-set -u
-cd "$(dirname "$0")/.."
-SR=.venv/bin/endorouter
+# The harder suite (cases-hard.jsonl) and the boundary suite (cases-boundary.jsonl: secrets sent under a public label,
+# where only the detectors stand in the way) against strict, balanced and LiteLLM. Same prerequisites as run_all.sh.
+source "$(dirname "$0")/lib.sh"
 CASES=src/endorouter/leakbench/cases-hard.jsonl
-# a previous run's servers may still be shutting down: wait until every port this script uses is free
-for port in 8795 8796 8797 8798 8799 8800 8801; do
-  for i in $(seq 1 60); do lsof -iTCP:$port -sTCP:LISTEN >/dev/null 2>&1 || break; sleep 1; done
-done
-pids=()
-(cd bench && LITELLM_TELEMETRY=False .litellm-venv/bin/litellm --config litellm-leakbench.yaml --host 127.0.0.1 --port 8796 > litellm.log 2>&1) & pids+=($!)
-$SR serve -c bench/leakbench-strict.yaml --port 8797 > /dev/null 2>&1 & pids+=($!)
-$SR serve -c bench/leakbench-balanced.yaml --port 8795 > /dev/null 2>&1 & pids+=($!)
-.venv/bin/python bench/local_shim.py 8801 > bench/shim.log 2>&1 & pids+=($!)
-for i in $(seq 1 90); do curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:8796/health/liveliness | grep -q 200 && break; sleep 1; done
-$SR leakbench --cases $CASES --base-url http://127.0.0.1:8796/v1 --no-provenance --model cloud-model --extra-body '{"metadata":{"session_id":"lb-{id}"}}' > bench/hard-litellm.json; echo "litellm exit $?"
-$SR leakbench --cases $CASES --base-url http://127.0.0.1:8797/v1 > bench/hard-strict.json; echo "strict exit $?"
-$SR leakbench --cases $CASES --base-url http://127.0.0.1:8795/v1 > bench/hard-balanced.json; echo "balanced exit $?"
-pkill -f "litellm --config litellm-leakbench.yaml"; kill "${pids[@]}" 2>/dev/null; wait 2>/dev/null
+EDGE=src/endorouter/leakbench/cases-boundary.jsonl
+start_litellm
+start_router bench/leakbench-strict.yaml 8797
+bench litellm any bench/hard-litellm.json --cases $CASES --base-url http://127.0.0.1:8796/v1 --no-provenance \
+  --model cloud-model --extra-body '{"metadata":{"session_id":"lb-{id}"}}'
+bench strict clean bench/hard-strict.json --cases $CASES --base-url http://127.0.0.1:8797/v1
+bench boundary-litellm any bench/boundary-litellm.json --cases $EDGE --base-url http://127.0.0.1:8796/v1 \
+  --no-provenance --model cloud-model --extra-body '{"metadata":{"session_id":"lb-{id}"}}'
+bench boundary-strict clean bench/boundary-strict.json --cases $EDGE --base-url http://127.0.0.1:8797/v1
+if classifier_up; then
+  start_router bench/leakbench-balanced.yaml 8795
+  bench balanced clean bench/hard-balanced.json --cases $CASES --base-url http://127.0.0.1:8795/v1
+  bench boundary-balanced clean bench/boundary-balanced.json --cases $EDGE --base-url http://127.0.0.1:8795/v1
+else
+  echo "balanced: SKIPPED, no classifier model server on 127.0.0.1:8801" >&2
+fi
+exit $failed

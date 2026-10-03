@@ -78,27 +78,29 @@ def _is_num(v) -> bool:
     return isinstance(v, (int, float)) and not isinstance(v, bool)
 
 
+# every other supported field has one plain shape; anything else is refused rather than forwarded
+_SCALAR_SHAPES = {
+    "stream": lambda v: isinstance(v, bool),
+    "stream_options": lambda v: isinstance(v, dict) and set(v) <= {"include_usage"} and isinstance(v.get("include_usage", False), bool),
+    "temperature": _is_num, "top_p": _is_num, "presence_penalty": _is_num, "frequency_penalty": _is_num,
+    "max_tokens": lambda v: isinstance(v, int) and not isinstance(v, bool),
+    "max_completion_tokens": lambda v: isinstance(v, int) and not isinstance(v, bool),
+    "n": lambda v: isinstance(v, int) and not isinstance(v, bool),
+    "seed": lambda v: isinstance(v, int) and not isinstance(v, bool),
+    "top_logprobs": lambda v: isinstance(v, int) and not isinstance(v, bool),
+    "logprobs": lambda v: isinstance(v, bool),
+    "parallel_tool_calls": lambda v: isinstance(v, bool),
+    "user": lambda v: isinstance(v, str),
+    "stop": lambda v: isinstance(v, str) or (isinstance(v, list) and all(isinstance(x, str) for x in v)),
+    "logit_bias": lambda v: isinstance(v, dict) and all(isinstance(k, str) and _is_num(x) for k, x in v.items()),
+    "tool_choice": lambda v: v in ("none", "auto", "required") or (
+        isinstance(v, dict) and set(v) <= {"type", "function"} and v.get("type") == "function"
+        and isinstance(v.get("function"), dict) and set(v["function"]) <= {"name"} and isinstance(v["function"].get("name"), str)),
+}
+
+
 def _check_scalars(body: dict) -> str | None:
-    """Every other supported field has one plain shape; anything else is refused rather than forwarded."""
-    checks = {
-        "stream": lambda v: isinstance(v, bool),
-        "stream_options": lambda v: isinstance(v, dict) and set(v) <= {"include_usage"} and isinstance(v.get("include_usage", False), bool),
-        "temperature": _is_num, "top_p": _is_num, "presence_penalty": _is_num, "frequency_penalty": _is_num,
-        "max_tokens": lambda v: isinstance(v, int) and not isinstance(v, bool),
-        "max_completion_tokens": lambda v: isinstance(v, int) and not isinstance(v, bool),
-        "n": lambda v: isinstance(v, int) and not isinstance(v, bool),
-        "seed": lambda v: isinstance(v, int) and not isinstance(v, bool),
-        "top_logprobs": lambda v: isinstance(v, int) and not isinstance(v, bool),
-        "logprobs": lambda v: isinstance(v, bool),
-        "parallel_tool_calls": lambda v: isinstance(v, bool),
-        "user": lambda v: isinstance(v, str),
-        "stop": lambda v: isinstance(v, str) or (isinstance(v, list) and all(isinstance(x, str) for x in v)),
-        "logit_bias": lambda v: isinstance(v, dict) and all(isinstance(k, str) and _is_num(x) for k, x in v.items()),
-        "tool_choice": lambda v: v in ("none", "auto", "required") or (
-            isinstance(v, dict) and set(v) <= {"type", "function"} and v.get("type") == "function"
-            and isinstance(v.get("function"), dict) and set(v["function"]) <= {"name"} and isinstance(v["function"].get("name"), str)),
-    }
-    for k, ok in checks.items():
+    for k, ok in _SCALAR_SHAPES.items():
         if k in body and body[k] is not None and not ok(body[k]):
             return f"{k}: unsupported value shape"
     return None

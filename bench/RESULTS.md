@@ -44,7 +44,7 @@ Each cell shows private cases leaked, or public cases kept off the cloud, out of
 
 ## Balanced mode
 
-In balanced mode, unlabelled work may go to the cloud when no detector fires and a local model classifies it as public. The classifier here was a 30B open-weight model, quantised to 4 bits, running on the same laptop (an M2 Max with 64 GB). We ran the suite many times as the code changed.
+In balanced mode, unlabelled work may go to the cloud when no detector fires and a local model classifies it as public. The classifier here was Muse Glimmer 30B, an open-weight model, quantised to 4 bits with MLX and running on the same laptop (an M2 Max with 64 GB). We ran the suite many times as the code changed.
 
 - **Private prompts.** In every run, no private case reached the cloud. The classifier called all 5 confidential prose cases private.
 - **Unlabelled public prompts.** In every run, the classifier cleared all 3 for the cloud.
@@ -87,7 +87,11 @@ In this release that filter blocked on detection with HTTP 400 and did not rerou
 
 ## Reproduce
 
-`bench/run_all.sh` runs every configuration on the main suite, and `bench/run_hard.sh` runs the harder suite. Step by step:
+You need the router installed in `.venv` (`python3 -m venv .venv && .venv/bin/pip install -e .`) and LiteLLM in `bench/.litellm-venv` (below). `bench/run_all.sh` runs every configuration on the main suite, and `bench/run_hard.sh` runs the harder and boundary suites. Each script stops the servers it started, and exits non-zero if any run is invalid or a configuration expected to leak nothing leaked.
+
+Balanced mode needs a local model server with an OpenAI-compatible API on `127.0.0.1:8801`, serving a model named `local-classifier`; edit `leakbench-balanced.yaml` to use another name. Without it, the scripts skip balanced mode and say so. Our runs used Muse Glimmer 30B, MLX 4-bit (group size 64), on an M2 Max with 64 GB. With a different model, balanced results will differ, and the strict results will not.
+
+Step by step:
 
 ```
 python -m venv bench/.litellm-venv
@@ -99,7 +103,7 @@ endorouter serve -c bench/leakbench-strict.yaml --port 8797
 endorouter leakbench --base-url http://127.0.0.1:8797/v1
 endorouter leakbench --base-url http://127.0.0.1:8797/v1 --no-provenance
 
-python bench/local_shim.py 8801     # or point the classifier target at any OpenAI-compatible local server
+# start a local model server on 127.0.0.1:8801 first, e.g. llama-server -m <model.gguf> --port 8801
 endorouter serve -c bench/leakbench-balanced.yaml --port 8795
 endorouter leakbench --base-url http://127.0.0.1:8795/v1
 
@@ -107,4 +111,4 @@ endorouter serve -c bench/leakbench-passthrough.yaml --port 8798
 endorouter leakbench --base-url http://127.0.0.1:8798/v1
 ```
 
-Raw outputs are the `result-*.json` files in this directory.
+Raw outputs are the `result-*.json`, `hard-*.json` and `boundary-*.json` files in this directory. They hold the synthetic cases and the routing outcome of each, never model answers.

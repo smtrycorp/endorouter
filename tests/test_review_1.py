@@ -15,7 +15,6 @@ from endorouter.config import parse_config
 from endorouter.detectors import scan_request, scan_text
 from endorouter.router import Router
 from endorouter.server import create_app
-
 from tests.test_router import Upstream, make_cfg
 
 AWS = "AKIAIOSFODNN7EXAMPLE"
@@ -24,7 +23,7 @@ AWS = "AKIAIOSFODNN7EXAMPLE"
 def client_for(tmp_path, up, **kw):
     cfg = make_cfg(tmp_path, **kw)
     router = Router(cfg, client=httpx.AsyncClient(transport=httpx.MockTransport(up), trust_env=False))
-    return TestClient(create_app(cfg, router), client=("127.0.0.1", 5000)), cfg
+    return TestClient(create_app(cfg, router), base_url="http://127.0.0.1", client=("127.0.0.1", 5000)), cfg
 
 
 # 1. repeated provenance headers
@@ -32,7 +31,7 @@ def test_repeated_label_headers_combine_most_restrictive(tmp_path):
     up = Upstream()
     c, _ = client_for(tmp_path, up)
     r = c.post("/v1/chat/completions", json={"model": "cloud", "messages": [{"role": "user", "content": "hi"}]},
-               headers=[("x-sovereign-label", "public"), ("x-sovereign-label", "private")])
+               headers=[("x-endorouter-label", "public"), ("x-endorouter-label", "private")])
     assert r.status_code == 403 and up.calls == []
 
 
@@ -40,7 +39,7 @@ def test_invalid_label_token_is_an_error_not_ignored(tmp_path):
     up = Upstream()
     c, _ = client_for(tmp_path, up)
     r = c.post("/v1/chat/completions", json={"model": "cloud", "messages": [{"role": "user", "content": "hi"}]},
-               headers={"x-sovereign-label": "public, privtae"})
+               headers={"x-endorouter-label": "public, privtae"})
     assert r.status_code == 400 and up.calls == []
 
 
@@ -48,7 +47,7 @@ def test_repeated_source_headers_are_all_read(tmp_path):
     up = Upstream()
     c, _ = client_for(tmp_path, up)
     r = c.post("/v1/chat/completions", json={"model": "cloud", "messages": [{"role": "user", "content": "hi"}]},
-               headers=[("x-sovereign-sources", "docs/public/a.md"), ("x-sovereign-sources", "clients/acme/a.md")])
+               headers=[("x-endorouter-source", "docs/public/a.md"), ("x-endorouter-source", "clients/acme/a.md")])
     assert r.status_code == 403 and up.calls == []
 
 
@@ -67,7 +66,7 @@ def test_injected_redirect_following_client_still_never_follows(tmp_path):
     up = Upstream({"local.test": "redirect"})
     cfg = make_cfg(tmp_path)
     router = Router(cfg, client=httpx.AsyncClient(transport=httpx.MockTransport(up), follow_redirects=True, trust_env=False))
-    r = TestClient(create_app(cfg, router)).post("/v1/chat/completions",
+    r = TestClient(create_app(cfg, router), base_url="http://127.0.0.1").post("/v1/chat/completions",
                                                  json={"model": "auto", "messages": [{"role": "user", "content": AWS}]})
     assert r.status_code == 502 and "evil.test" not in up.calls
 
@@ -158,7 +157,7 @@ def test_classifier_send_is_blocked_when_audit_fails(tmp_path):
     client = httpx.AsyncClient(transport=httpx.MockTransport(lambda r: calls.append(r.url.host) or httpx.Response(
         200, json={"choices": [{"message": {"content": "PUBLIC"}}]})), trust_env=False)
     router = Router(cfg, client=client, audit=AuditLog(str(tmp_path / "missing" / "a.jsonl")))
-    r = TestClient(create_app(cfg, router)).post("/v1/chat/completions", json={"model": "auto", "messages": [{"role": "user", "content": "hi"}]})
+    r = TestClient(create_app(cfg, router), base_url="http://127.0.0.1").post("/v1/chat/completions", json={"model": "auto", "messages": [{"role": "user", "content": "hi"}]})
     assert r.status_code == 503 and calls == []
 
 
@@ -177,7 +176,7 @@ def test_short_audit_writes_are_completed(tmp_path, monkeypatch):
 def test_model_name_and_capability_text_never_reach_the_audit_log(tmp_path):
     c, cfg = client_for(tmp_path, Upstream())
     c.post("/v1/chat/completions", json={"model": "secret-merger-plan", "messages": [{"role": "user", "content": "hi"}]},
-           headers={"x-sovereign-capability": "secret-capability-text"})
+           headers={"x-endorouter-capability": "secret-capability-text"})
     log = open(cfg.audit_log).read()
     assert "secret-merger-plan" not in log and "secret-capability-text" not in log
 

@@ -9,7 +9,8 @@ Dispatch rules:
 
 from __future__ import annotations
 
-import copy
+import asyncio
+import json
 import os
 import time
 import uuid
@@ -19,10 +20,11 @@ from typing import AsyncIterator, Sequence
 import httpx
 
 from . import POLICY_VERSION
-from .audit import AuditLog
+from .audit import AuditError, AuditLog
 from .classifier import classify
 from .config import Config, Target
 from .detectors import Finding, scan_request
+from .discover import ollama_show_url, remote_from_show, verify_target
 from .labels import Label
 from .policy import Decision, decide, permitted_targets
 from .validate import InvalidRequest, validate
@@ -35,6 +37,16 @@ class Refused(Exception):
         super().__init__(decision.error or "refused")
         self.decision = decision
         self.request_id = request_id
+
+
+class SentUnrecorded(Exception):
+    """The request reached a target, but the record of that could not be written. Distinct from a refusal: the prompt
+    has left, and the caller must not be told otherwise."""
+
+    def __init__(self, request_id: str, target: str):
+        super().__init__(f"sent to {target}, but the audit log could not record it")
+        self.request_id = request_id
+        self.target = target
 
 
 class UpstreamFailed(Exception):
@@ -63,9 +75,6 @@ class Router:
             raise ValueError("an injected httpx client must be created with trust_env=False")
         self.cfg = cfg
         self.client = client or make_client()
-        # targets discovery verified are re-checked before every send (cached for a second): a port that changed
-        # hands is skipped, and used again only once the verified program is back on it
-        self._verified_at: dict[str, float] = {}
         self.audit = audit or AuditLog(cfg.audit_log)
 
     async def plan(
@@ -77,15 +86,18 @@ class Router:
         capability: str | None = None,
         request_id: str | None = None,
     ) -> tuple[Decision, list[Finding]]:
-        findings = scan_request(body, extra=[(f"sources[{i}]", s) for i, s in enumerate(sources)])
+        # scanning is CPU work; in a thread, a large request cannot stall every other request in flight
+        findings = await asyncio.to_thread(scan_request, body, [(f"sources[{i}]", s) for i, s in enumerate(sources)])
         verdict = None
         if self.cfg.classifier.enabled:
             ct = self.cfg.target(self.cfg.classifier.target or "")
             # the classifier receives the prompt text too: its port is re-verified like any other send, and an
             # unverified port means no verdict (which never grants anything)
-            if ct is not None and (not ct.verify_program or await self._still_verified(ct, request_id or "")):
+            if ct is not None and (not (ct.verify_program or ct.ollama_api)
+                                   or await self._still_verified(ct, request_id or "")):
                 self.audit.write({"event": "classifier_dispatch", "request_id": request_id, "target": ct.name})
-                verdict = await classify(self.cfg, body, self.client)
+                verdict = await classify(self.cfg, body, self.client, on_failure=lambda kind: self.audit.write(
+                    {"event": "classifier_failed", "request_id": request_id, "kind": kind}))
         d = decide(
             self.cfg,
             requested_model=body.get("model"),
@@ -104,25 +116,35 @@ class Router:
         sources: Sequence[str] = (),
         declared: Label | None = None,
         capability: str | None = None,
+        peer: str | None = None,
+        trusted: bool | None = None,
     ) -> Routed:
+        """Route one chat request. Raises InvalidRequest, AuditError (nothing was sent), Refused, UpstreamFailed, or
+        SentUnrecorded (sent, but not recorded). peer and trusted say who supplied any label, for the audit log."""
         request_id = uuid.uuid4().hex[:16]
+        # One representation from here on: the JSON that will be sent. Validating, scanning and sending the same
+        # bytes closes the gap a tuple or a numeric dict key opened, where the scan saw one shape and the wire another;
+        # it is also the private snapshot a caller cannot change mid-flight.
+        try:
+            body = json.loads(json.dumps(body, allow_nan=False))
+        except (TypeError, ValueError) as e:
+            raise InvalidRequest("the request must be plain JSON: strings, numbers, booleans, lists and objects") from e
         problem = validate(body)
         if problem:  # the same refusal a library caller gets as an HTTP caller
             raise InvalidRequest(problem)
-        # inspect and send one private snapshot: a caller that mutates its own objects mid-flight cannot change
-        # what is sent after it was inspected
-        body = copy.deepcopy(body)
         sources = tuple(str(s) for s in sources)
         decision, _ = await self.plan(body, sources=sources, declared=declared, capability=capability, request_id=request_id)
         # written and flushed before anything leaves; raises AuditError (the caller refuses) if the log is unwritable
         self.audit.write({"event": "decision", "request_id": request_id, "mode": self.cfg.mode,
-                          "policy_version": POLICY_VERSION, **decision.as_record()})
+                          "policy_version": POLICY_VERSION, "peer": peer, "trusted": trusted,
+                          "declared": declared.name.lower() if declared is not None else None, "sources": len(sources),
+                          **decision.as_record()})
         if decision.selected is None:
             raise Refused(decision, request_id)
         attempts: list[dict] = []
         stream = bool(body.get("stream"))
         for target in permitted_targets(self.cfg, decision):
-            if target.verify_program and not await self._still_verified(target, request_id):
+            if (target.verify_program or target.ollama_api) and not await self._still_verified(target, request_id):
                 attempts.append({"target": target.name, "error": "port_not_verified"})
                 continue
             t0 = time.monotonic()
@@ -146,34 +168,42 @@ class Router:
                 resp = await self.client.send(req, stream=stream, follow_redirects=False)
             except httpx.HTTPError as e:
                 attempts.append({"target": target.name, "error": type(e).__name__, "ms": int((time.monotonic() - t0) * 1000)})
-                self._verified_at.pop(target.name, None)  # after a failure, look again next time
                 continue
             if resp.status_code in RETRYABLE or 300 <= resp.status_code < 400:
                 attempts.append({"target": target.name, "status": resp.status_code, "ms": int((time.monotonic() - t0) * 1000)})
                 await resp.aclose()
                 continue
-            self.audit.write({"event": "dispatched", "request_id": request_id, "target": target.name,
-                              "location": target.location, "status": resp.status_code, "attempts": attempts,
-                              "ms": int((time.monotonic() - t0) * 1000)})
+            try:
+                self.audit.write({"event": "dispatched", "request_id": request_id, "target": target.name,
+                                  "location": target.location, "status": resp.status_code, "attempts": attempts,
+                                  "ms": int((time.monotonic() - t0) * 1000)})
+            except AuditError:
+                await resp.aclose()
+                raise SentUnrecorded(request_id, target.name) from None
             return Routed(request_id, decision, target, resp)
         self.audit.write({"event": "failed", "request_id": request_id, "attempts": attempts})
         raise UpstreamFailed(request_id, attempts)
 
+    async def _ollama_model_remote(self, target: Target) -> str | None:
+        """Ollama can start serving a hosted model under a name that was local at setup; ask it again each time."""
+        if "cloud" in target.model.lower():
+            return f"model {target.model} is hosted remotely"
+        try:
+            r = await self.client.post(ollama_show_url(target.url), json={"model": target.model})
+            info = r.json()
+        except (httpx.HTTPError, json.JSONDecodeError):
+            return "could not confirm the model runs on this machine"
+        return f"model {target.model} is hosted remotely" if remote_from_show(r.status_code, info) else None
+
     async def _still_verified(self, target: Target, request_id: str) -> bool:
-        import asyncio
-
-        from .discover import verified_program
-
-        now = time.monotonic()
-        if now - self._verified_at.get(target.name, -10.0) < 1.0:
+        """Checked before every send, never cached: a port that changes hands, or an Ollama model that is now hosted
+        remotely, is refused on the next request. lsof and ps run in a worker thread so other requests continue."""
+        reason = await asyncio.to_thread(verify_target, target)
+        if reason is None and (target.ollama_api or target.verify_program == "ollama"):
+            reason = await self._ollama_model_remote(target)
+        if reason is None:
             return True
-        # lsof and ps run in a worker thread, so the check never stalls other requests in flight
-        if await asyncio.to_thread(verified_program, target.url) == target.verify_program:
-            self._verified_at[target.name] = now
-            return True
-        self._verified_at.pop(target.name, None)
-        self.audit.write({"event": "target_unverified", "request_id": request_id, "target": target.name,
-                          "reason": f"port not served by {target.verify_program} right now"})
+        self.audit.write({"event": "target_unverified", "request_id": request_id, "target": target.name, "reason": reason})
         return False
 
     async def aclose(self) -> None:

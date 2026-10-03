@@ -3,8 +3,10 @@
 Setup for the gateway under test: point its CLOUD destination at http://127.0.0.1:<sink-port>/v1 and its LOCAL destination
 at http://127.0.0.1:<sink-port + 1>/v1. leakbench starts both as fake OpenAI servers. The cloud one records every request.
 
-Each case carries a unique marker. After sending every case through the gateway, a case LEAKED if its marker reached the
-cloud sink and its ground truth is private. It was OVER-RESTRICTED if its truth is public and it never reached the cloud
+Cases are sent one at a time, and each sink records which case was in flight when a request arrived. A private case
+LEAKED if the cloud sink received anything while it was in flight, or anything carrying its marker (every message of a
+case carries the case's unique marker, so a gateway that sends only part of a conversation, or sends it late, is still
+caught). A request reaching a sink while no case is in flight cannot be attributed, and makes the run invalid. It was OVER-RESTRICTED if its truth is public and it never reached the cloud
 (a cost, not a leak; strict routers accept it by design). The result is measured at the sink, never taken from the
 gateway's own report.
 
@@ -40,10 +42,10 @@ from starlette.responses import JSONResponse
 from starlette.routing import Route
 
 
-def _fake_openai(name: str, seen: list[str]) -> Starlette:
+def _fake_openai(name: str, seen: list[tuple[str | None, str]], in_flight: dict) -> Starlette:
     async def chat(request: Request):
         raw = (await request.body()).decode("utf-8", "replace")
-        seen.append(raw)
+        seen.append((in_flight.get("case"), raw))
         return JSONResponse({"id": f"{name}-1", "object": "chat.completion", "created": int(time.time()), "model": name,
                              "choices": [{"index": 0, "finish_reason": "stop",
                                           "message": {"role": "assistant", "content": f"ok from {name}"}}],
@@ -78,10 +80,9 @@ def _marked(case: dict, model: str | None = None) -> tuple[dict, str]:
     # letters only, so the marker itself never looks like a secret to any detector (a random hex marker did)
     marker = "lbk" + "".join(secrets.choice("abcdefghijklmnopqrstuvwxyz") for _ in range(24))
     msgs = json.loads(json.dumps(case["messages"]))
-    for m in reversed(msgs):
-        if m.get("role") == "user" and isinstance(m.get("content"), str):
+    for m in msgs:  # every message, so history sent without the last turn still carries the marker
+        if isinstance(m.get("content"), str):
             m["content"] = f"{m['content']}\n[{marker}]"
-            break
     # every request field a case carries is kept (stop, response_format, tools, ...); only benchmark metadata is not sent
     fields = {k: json.loads(json.dumps(v)) for k, v in case.items() if k not in CASE_METADATA}
     return {**fields, "model": model or case.get("model", "auto"), "messages": msgs}, marker
@@ -100,12 +101,13 @@ def _answered_by(text: str) -> str:
 
 
 async def run(base_url: str, cases_path: str | None = None, *, sink_port: int = 8799, sources_header: bool = True,
-              model: str | None = None, extra_body: dict | None = None) -> dict:
+              model: str | None = None, extra_body: dict | None = None, settle_s: float = 1.0) -> dict:
     cases = load_cases(cases_path)
-    cloud_seen: list[str] = []
-    local_seen: list[str] = []
-    cloud = await _serve(_fake_openai("fake-cloud", cloud_seen), sink_port)
-    local = await _serve(_fake_openai("fake-local", local_seen), sink_port + 1)
+    cloud_seen: list[tuple[str | None, str]] = []
+    local_seen: list[tuple[str | None, str]] = []
+    in_flight: dict = {"case": None}
+    cloud = await _serve(_fake_openai("fake-cloud", cloud_seen, in_flight), sink_port)
+    local = await _serve(_fake_openai("fake-local", local_seen, in_flight), sink_port + 1)
     rows: list[dict] = []
     try:
         async with httpx.AsyncClient(timeout=60, trust_env=False) as client:
@@ -113,37 +115,45 @@ async def run(base_url: str, cases_path: str | None = None, *, sink_port: int = 
                 body, marker = _marked(c, model)
                 if extra_body:
                     body.update(json.loads(json.dumps(extra_body).replace("{id}", c["id"])))
-                headers = {}
-                if sources_header and c.get("sources"):
-                    headers["x-sovereign-sources"] = ",".join(c["sources"])
-                if sources_header and c.get("label"):
-                    headers["x-sovereign-label"] = c["label"]
+                headers: list[tuple[str, str]] = []
+                if sources_header:  # one header per source, since a path or URL can contain a comma
+                    headers += [("x-endorouter-source", s) for s in c.get("sources", [])]
+                    if c.get("label"):
+                        headers.append(("x-endorouter-label", c["label"]))
                 text = ""
+                in_flight["case"] = c["id"]
                 try:
                     r = await client.post(f"{base_url.rstrip('/')}/chat/completions", json=body, headers=headers)
                     status, text = r.status_code, r.text
                 except httpx.HTTPError as e:
                     status = f"error:{type(e).__name__}"
+                finally:
+                    in_flight["case"] = None
                 row = {"id": c["id"], "category": c["category"], "truth": c["truth"], "marker": marker, "status": status,
                        "answered_by": _answered_by(text) if status == 200 else None}
                 if status in REFUSAL_STATUSES:
                     row["refusal"] = text[:200]  # so a reader can check each refusal is a policy decision
                 rows.append(row)
+        # the sinks keep listening a little after the last case: a gateway that sends late is caught, not missed
+        await asyncio.sleep(settle_s)
     finally:
         cloud.should_exit = True
         local.should_exit = True
         await asyncio.sleep(0.1)
 
-    cloud_blob, local_blob = "\n".join(cloud_seen), "\n".join(local_seen)
+    def reached(seen: list[tuple[str | None, str]], row: dict) -> bool:
+        return any(case == row["id"] or row["marker"] in raw for case, raw in seen)
+
     calib = rows.pop(0)
-    calib_ok = calib["marker"] in cloud_blob or calib["marker"] in local_blob
+    calib_ok = reached(cloud_seen, calib) or reached(local_seen, calib)
+    stray = sum(1 for case, _ in cloud_seen + local_seen if case is None)
     by_cat: dict[str, dict] = defaultdict(lambda: {"cases": 0, "leaked": 0, "over_restricted": 0})
     leaks, over, private_n, public_n = [], [], 0, 0
     for row in rows:
-        reached_cloud = row["marker"] in cloud_blob
+        reached_cloud = reached(cloud_seen, row)
         if reached_cloud:
             row["reached"] = "cloud"
-        elif row["marker"] in local_blob:
+        elif reached(local_seen, row):
             row["reached"] = "local"
         elif row["status"] in REFUSAL_STATUSES:
             row["reached"] = "refused"
@@ -170,6 +180,9 @@ async def run(base_url: str, cases_path: str | None = None, *, sink_port: int = 
                         "operational or not wired to the sinks, so its refusals mean nothing")
     if unrouted:
         problems.append(f"{len(unrouted)} case(s) reached no sink and were not refused")
+    if stray:
+        problems.append(f"{stray} request(s) reached a sink while no case was in flight: they cannot be attributed, "
+                        "so a leak could hide among them")
     if unobserved:
         problems.append(f"{len(unobserved)} answer(s) came from a destination leakbench does not observe")
     return {

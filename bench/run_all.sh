@@ -1,23 +1,19 @@
 #!/usr/bin/env bash
-# Re-run every leakbench configuration in bench/RESULTS.md. Needs: .venv with endorouter, bench/.litellm-venv
-# with litellm 1.103.1, and (for balanced) a local completion route for bench/local_shim.py (SHIM_UPSTREAM, SHIM_KEY).
-set -u
-cd "$(dirname "$0")/.."
-SR=.venv/bin/endorouter
-# a previous run's servers may still be shutting down: wait until every port this script uses is free
-for port in 8795 8796 8797 8798 8799 8800 8801; do
-  for i in $(seq 1 60); do lsof -iTCP:$port -sTCP:LISTEN >/dev/null 2>&1 || break; sleep 1; done
-done
-pids=()
-(cd bench && LITELLM_TELEMETRY=False .litellm-venv/bin/litellm --config litellm-leakbench.yaml --host 127.0.0.1 --port 8796 > litellm.log 2>&1) & pids+=($!)
-$SR serve -c bench/leakbench-strict.yaml --port 8797 > /dev/null 2>&1 & pids+=($!)
-$SR serve -c bench/leakbench-passthrough.yaml --port 8798 > /dev/null 2>&1 & pids+=($!)
-$SR serve -c bench/leakbench-balanced.yaml --port 8795 > /dev/null 2>&1 & pids+=($!)
-.venv/bin/python bench/local_shim.py 8801 > bench/shim.log 2>&1 & pids+=($!)
-for i in $(seq 1 90); do curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:8796/health/liveliness | grep -q 200 && break; sleep 1; done
-$SR leakbench --base-url http://127.0.0.1:8796/v1 --no-provenance --model cloud-model --extra-body '{"metadata":{"session_id":"lb-{id}"}}' > bench/result-litellm.json; echo "litellm exit $?"
-$SR leakbench --base-url http://127.0.0.1:8797/v1 > bench/result-strict.json; echo "strict exit $?"
-$SR leakbench --base-url http://127.0.0.1:8797/v1 --no-provenance > bench/result-strict-noprov.json; echo "strict-noprov exit $?"
-$SR leakbench --base-url http://127.0.0.1:8798/v1 > bench/result-control-passthrough.json; echo "control exit $?"
-$SR leakbench --base-url http://127.0.0.1:8795/v1 > bench/result-balanced.json; echo "balanced exit $?"
-pkill -f "litellm --config litellm-leakbench.yaml"; kill "${pids[@]}" 2>/dev/null; wait 2>/dev/null
+# Re-run every configuration in bench/RESULTS.md on the main suite. Exits non-zero if any run is invalid, or if a
+# configuration expected to leak nothing leaked.
+source "$(dirname "$0")/lib.sh"
+start_litellm
+start_router bench/leakbench-strict.yaml 8797
+start_router bench/leakbench-passthrough.yaml 8798
+bench litellm any bench/result-litellm.json --base-url http://127.0.0.1:8796/v1 --no-provenance --model cloud-model \
+  --extra-body '{"metadata":{"session_id":"lb-{id}"}}'
+bench strict clean bench/result-strict.json --base-url http://127.0.0.1:8797/v1
+bench strict-noprov clean bench/result-strict-noprov.json --base-url http://127.0.0.1:8797/v1 --no-provenance
+bench control any bench/result-control-passthrough.json --base-url http://127.0.0.1:8798/v1
+if classifier_up; then
+  start_router bench/leakbench-balanced.yaml 8795
+  bench balanced clean bench/result-balanced.json --base-url http://127.0.0.1:8795/v1
+else
+  echo "balanced: SKIPPED, no classifier model server on 127.0.0.1:8801" >&2
+fi
+exit $failed

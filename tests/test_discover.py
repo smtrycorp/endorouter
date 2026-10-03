@@ -6,8 +6,7 @@ import httpx
 import pytest
 from starlette.testclient import TestClient
 
-from endorouter import Label, decide
-from endorouter import discover
+from endorouter import Label, decide, discover
 from endorouter.config import parse_config
 from endorouter.router import Router
 from endorouter.server import create_app
@@ -15,7 +14,7 @@ from endorouter.server import create_app
 
 def test_auto_config_finds_local_and_env_keys(monkeypatch, tmp_path):
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path))
-    monkeypatch.setattr(discover, "find_local", lambda timeout=1.0: ([("ollama", "http://127.0.0.1:11434/v1", "qwen3:8b", "ollama")], []))
+    monkeypatch.setattr(discover, "find_local", lambda timeout=1.0: ([("ollama", "http://127.0.0.1:11434/v1", "qwen3:8b", "ollama", True)], []))
     for _, env, _ in discover.CLOUD_PROVIDERS:
         monkeypatch.delenv(env, raising=False)
     monkeypatch.setenv("OPENAI_API_KEY", "x")
@@ -51,8 +50,8 @@ def test_pass_through_needs_public_and_sends_the_named_model(tmp_path):
 
     cfg = _cfg(tmp_path)
     app = create_app(cfg, Router(cfg, client=httpx.AsyncClient(transport=httpx.MockTransport(up), trust_env=False)))
-    c = TestClient(app, client=("127.0.0.1", 5000))
+    c = TestClient(app, base_url="http://127.0.0.1", client=("127.0.0.1", 5000))
     body = {"model": "openai/gpt-5", "messages": [{"role": "user", "content": "hi"}]}
     assert c.post("/v1/chat/completions", json=body).status_code == 403 and sent == []  # unknown: refused
-    r = c.post("/v1/chat/completions", json=body, headers={"x-sovereign-label": "public"})
+    r = c.post("/v1/chat/completions", json=body, headers={"x-endorouter-label": "public"})
     assert r.status_code == 200 and sent[0][0] == "cloud.test" and b'"model":"gpt-5"' in sent[0][1].replace(b" ", b"")

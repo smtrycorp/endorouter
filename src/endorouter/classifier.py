@@ -5,8 +5,10 @@ None, and None never grants anything."""
 
 from __future__ import annotations
 
+import json
 import re
 import secrets
+from collections.abc import Callable
 
 import httpx
 
@@ -28,7 +30,14 @@ _VERDICT = re.compile(r"[\"'`*]*(PRIVATE|PUBLIC)[\"'`*]*\.?")
 MAX_CHARS = 12000
 
 
-async def classify(cfg: Config, body: dict, client: httpx.AsyncClient) -> Label | None:
+async def classify(cfg: Config, body: dict, client: httpx.AsyncClient,
+                   on_failure: Callable[[str], None] | None = None) -> Label | None:
+    """PRIVATE, PUBLIC, or None. on_failure receives the kind of failure (never the text), so a broken classifier is
+    visible in the audit log instead of quietly turning balanced mode into strict."""
+    def failed(kind: str) -> None:
+        if on_failure is not None:
+            on_failure(kind)
+
     if not cfg.classifier.enabled:
         return None
     t = cfg.target(cfg.classifier.target or "")
@@ -37,6 +46,7 @@ async def classify(cfg: Config, body: dict, client: httpx.AsyncClient) -> Label 
     text = "\n".join(s for _, s in texts_in_request(body))
     if len(text) > MAX_CHARS:
         # never clear text the classifier did not read: a long request gets no verdict (strict treatment)
+        failed("too_long")
         return None
     try:
         r = await client.post(
@@ -49,11 +59,14 @@ async def classify(cfg: Config, body: dict, client: httpx.AsyncClient) -> Label 
         )
         r.raise_for_status()
         answer = r.json()["choices"][0]["message"]["content"]
-        if not isinstance(answer, str):
-            return None
-        m = _VERDICT.fullmatch(answer.strip().upper())
-    except Exception:  # noqa: BLE001
+    except httpx.HTTPError as e:
+        failed(f"unreachable:{type(e).__name__}")
         return None
+    except (json.JSONDecodeError, KeyError, IndexError, TypeError):
+        failed("malformed_response")
+        return None
+    m = _VERDICT.fullmatch(answer.strip().upper()) if isinstance(answer, str) else None
     if not m:
+        failed("no_verdict")
         return None
     return Label.PRIVATE if m.group(1) == "PRIVATE" else Label.PUBLIC

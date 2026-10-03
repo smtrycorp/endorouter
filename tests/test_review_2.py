@@ -7,15 +7,12 @@ import json
 
 import httpx
 import pytest
-from starlette.testclient import TestClient
 
 from endorouter import Label, decide
 from endorouter.audit import AuditLog
 from endorouter.classifier import classify
-from endorouter.config import parse_config
 from endorouter.detectors import scan_request, scan_text, texts_in_request
 from endorouter.router import Router
-from endorouter.server import create_app
 from tests.test_review_1 import _answering, _balanced, client_for, make_cfg_url
 from tests.test_router import Upstream, make_cfg
 

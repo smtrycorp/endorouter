@@ -20,12 +20,12 @@ Where it may go:
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
 import posixpath
 import re
+from dataclasses import dataclass
 from fnmatch import fnmatchcase
-from urllib.parse import unquote, urlsplit
 from typing import Sequence
+from urllib.parse import unquote, urlsplit
 
 from .config import Config, Target
 from .detectors import Finding
@@ -102,11 +102,22 @@ def _glob(s: str, pattern: str) -> bool:
     return fnmatchcase(s, pattern) or (pattern.startswith("**/") and fnmatchcase(s, pattern[3:]))
 
 
+def _private_match(s: str, pattern: str) -> bool:
+    """Private patterns are matched generously, because a miss sends private work out: against every trailing part of
+    a file path (so 'clients/**' covers '/home/me/proj/clients/x.md'), and ignoring case (macOS and Windows treat
+    'Clients/' and 'clients/' as one folder). Public patterns get neither, so this can only make a source more private."""
+    s, pattern = s.casefold(), pattern.casefold()
+    if _URL.match(s):
+        return _glob(s, pattern)
+    parts = s.split("/")
+    return any(_glob("/".join(parts[i:]), pattern) for i in range(len(parts)))
+
+
 def source_label(source: str, cfg: Config) -> tuple[Label, str]:
     s = canonical_source(source)
     if s is None:
         return Label.UNKNOWN, "source_unmatchable"
-    if any(_glob(s, g) for g in cfg.provenance.private_sources):
+    if any(_private_match(s, g) for g in cfg.provenance.private_sources):
         return Label.PRIVATE, "source_private"
     if any(_glob(s, g) for g in cfg.provenance.public_sources):
         return Label.PUBLIC, "source_public"
