@@ -66,7 +66,6 @@
       "id": "pub-label-aws",
       "category": "secret_latest",
       "truth": "private",
-      "marker": "nectar cart opal valley hazel leek field cedar",
       "status": 200,
       "answered_by": "local",
       "reached": "local"
@@ -75,7 +74,6 @@
       "id": "pub-label-unknown-vendor",
       "category": "secret_shape",
       "truth": "private",
-      "marker": "umber bramble echo birch heron seal rice dusk",
       "status": 200,
       "answered_by": "local",
       "reached": "local"
@@ -84,7 +82,6 @@
       "id": "pub-label-card",
       "category": "personal_data",
       "truth": "private",
-      "marker": "lute copper grove velvet knoll valley bison grotto",
       "status": 200,
       "answered_by": "local",
       "reached": "local"
@@ -93,7 +90,6 @@
       "id": "pub-label-history",
       "category": "secret_in_history",
       "truth": "private",
-      "marker": "sparrow dove cloud north yarrow cotton mill tinder",
       "status": 200,
       "answered_by": "local",
       "reached": "local"
@@ -102,7 +98,6 @@
       "id": "pub-label-tool-result",
       "category": "secret_in_tool_result",
       "truth": "private",
-      "marker": "chair velvet piano lilac wood seal seal nimbus",
       "status": 200,
       "answered_by": "local",
       "reached": "local"
@@ -111,7 +106,6 @@
       "id": "pub-source-pkey",
       "category": "private_key",
       "truth": "private",
-      "marker": "slate bean maple moose cheese quarry storm otter",
       "status": 200,
       "answered_by": "local",
       "reached": "local"
@@ -120,7 +114,6 @@
       "id": "pub-label-stream-dburl",
       "category": "secret_latest",
       "truth": "private",
-      "marker": "shelf loom lantern cottage north jam raven acorn",
       "status": 200,
       "answered_by": "local",
       "reached": "local"
@@ -129,7 +122,6 @@
       "id": "pub-label-question",
       "category": "public_labeled",
       "truth": "public",
-      "marker": "thyme sugar violet salt pine glacier cocoa goose",
       "status": 200,
       "answered_by": "cloud",
       "reached": "cloud"
@@ -138,7 +130,6 @@
       "id": "pub-source-question",
       "category": "public_labeled",
       "truth": "public",
-      "marker": "sparrow cedar copper reed creek valley ember hill",
       "status": 200,
       "answered_by": "cloud",
       "reached": "cloud"
@@ -147,7 +138,6 @@
       "id": "miss-bare-hex",
       "category": "known_miss",
       "truth": "private",
-      "marker": "lighthouse field tulip vale button melon robin linen",
       "status": 200,
       "answered_by": "cloud",
       "reached": "cloud"
@@ -156,7 +146,6 @@
       "id": "miss-word-key",
       "category": "known_miss",
       "truth": "private",
-      "marker": "basil acorn compass eagle badger honey ember cherry",
       "status": 200,
       "answered_by": "cloud",
       "reached": "cloud"
@@ -165,7 +154,6 @@
       "id": "miss-lowercase-key",
       "category": "known_miss",
       "truth": "private",
-      "marker": "breeze tower dell berry isle fjord hearth oak",
       "status": 200,
       "answered_by": "cloud",
       "reached": "cloud"
@@ -174,7 +162,6 @@
       "id": "miss-wrapped-base64",
       "category": "known_miss",
       "truth": "private",
-      "marker": "garden sage horn fjord yarn ledge loom feather",
       "status": 200,
       "answered_by": "cloud",
       "reached": "cloud"
@@ -183,7 +170,6 @@
       "id": "miss-short-key",
       "category": "known_miss",
       "truth": "private",
-      "marker": "eagle dune corn kite lemon valley frost fox",
       "status": 200,
       "answered_by": "cloud",
       "reached": "cloud"

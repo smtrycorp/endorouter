@@ -60,7 +60,6 @@
       "id": "pub-label-aws",
       "category": "secret_latest",
       "truth": "private",
-      "marker": "ribbon fig tulip drum shelf thyme chair opal",
       "status": 200,
       "answered_by": "local",
       "reached": "local"
@@ -69,7 +68,6 @@
       "id": "pub-label-unknown-vendor",
       "category": "secret_shape",
       "truth": "private",
-      "marker": "ribbon sage vale mist raven wheat violet nectar",
       "status": 200,
       "answered_by": "local",
       "reached": "local"
@@ -78,7 +76,6 @@
       "id": "pub-label-card",
       "category": "personal_data",
       "truth": "private",
-      "marker": "prairie haven field moon berry falcon bean cliff",
       "status": 200,
       "answered_by": "local",
       "reached": "local"
@@ -87,7 +84,6 @@
       "id": "pub-label-history",
       "category": "secret_in_history",
       "truth": "private",
-      "marker": "thyme slate peach ribbon indigo cedar wheel toast",
       "status": 200,
       "answered_by": "local",
       "reached": "local"
@@ -96,7 +92,6 @@
       "id": "pub-label-tool-result",
       "category": "secret_in_tool_result",
       "truth": "private",
-      "marker": "wind beacon dawn lantern fig cheese mango linen",
       "status": 200,
       "answered_by": "local",
       "reached": "local"
@@ -105,7 +100,6 @@
       "id": "pub-source-pkey",
       "category": "private_key",
       "truth": "private",
-      "marker": "meadow breeze sage wagon dahlia violet raven canal",
       "status": 200,
       "answered_by": "local",
       "reached": "local"
@@ -114,7 +108,6 @@
       "id": "pub-label-stream-dburl",
       "category": "secret_latest",
       "truth": "private",
-      "marker": "yew arrow estuary bramble birch copper quill estuary",
       "status": 200,
       "answered_by": "local",
       "reached": "local"
@@ -123,7 +116,6 @@
       "id": "pub-label-question",
       "category": "public_labeled",
       "truth": "public",
-      "marker": "sky river tower cocoa sorrel cart laurel honey",
       "status": 200,
       "answered_by": "cloud",
       "reached": "cloud"
@@ -132,7 +124,6 @@
       "id": "pub-source-question",
       "category": "public_labeled",
       "truth": "public",
-      "marker": "lark prairie wheat marble valley kite tower maple",
       "status": 200,
       "answered_by": "cloud",
       "reached": "cloud"
@@ -141,7 +132,6 @@
       "id": "miss-bare-hex",
       "category": "known_miss",
       "truth": "private",
-      "marker": "brook piano melon kelp snow dawn creek parsley",
       "status": 200,
       "answered_by": "local",
       "reached": "local"
@@ -150,7 +140,6 @@
       "id": "miss-word-key",
       "category": "known_miss",
       "truth": "private",
-      "marker": "desk haven umber oak tide willow lute table",
       "status": 200,
       "answered_by": "local",
       "reached": "local"
@@ -159,7 +148,6 @@
       "id": "miss-lowercase-key",
       "category": "known_miss",
       "truth": "private",
-      "marker": "violin compass piano castle glacier lamp lark thread",
       "status": 200,
       "answered_by": "local",
       "reached": "local"
@@ -168,7 +156,6 @@
       "id": "miss-wrapped-base64",
       "category": "known_miss",
       "truth": "private",
-      "marker": "lagoon peak opal sparrow zephyr opal marble bramble",
       "status": 200,
       "answered_by": "local",
       "reached": "local"
@@ -177,7 +164,6 @@
       "id": "miss-short-key",
       "category": "known_miss",
       "truth": "private",
-      "marker": "lark bramble heron pebble drift dawn bean wind",
       "status": 200,
       "answered_by": "local",
       "reached": "local"

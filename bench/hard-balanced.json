@@ -60,7 +60,6 @@
       "id": "sub-layoffs",
       "category": "subtle_confidential",
       "truth": "private",
-      "marker": "map leek wheat hazel moose cheese fjord ember",
       "status": 200,
       "answered_by": "local",
       "reached": "local"
@@ -69,7 +68,6 @@
       "id": "sub-termsheet",
       "category": "subtle_confidential",
       "truth": "private",
-      "marker": "bell storm acre heron upland fox hill butter",
       "status": 200,
       "answered_by": "local",
       "reached": "local"
@@ -78,7 +76,6 @@
       "id": "sub-patient",
       "category": "subtle_confidential",
       "truth": "private",
-      "marker": "iris parsley oasis lynx drum cove yarn pansy",
       "status": 200,
       "answered_by": "local",
       "reached": "local"
@@ -87,7 +84,6 @@
       "id": "sub-incident",
       "category": "subtle_confidential",
       "truth": "private",
-      "marker": "laurel wren bread grotto dune clover shore fox",
       "status": 200,
       "answered_by": "local",
       "reached": "local"
@@ -96,7 +92,6 @@
       "id": "sub-review",
       "category": "subtle_confidential",
       "truth": "private",
-      "marker": "fountain brick timber pea cape frost piano cloud",
       "status": 200,
       "answered_by": "local",
       "reached": "local"
@@ -105,7 +100,6 @@
       "id": "sub-pricing",
       "category": "subtle_confidential",
       "truth": "private",
-      "marker": "slate clover cherry hill thistle wool jasmine chalk",
       "status": 200,
       "answered_by": "local",
       "reached": "local"
@@ -114,7 +108,6 @@
       "id": "sub-legal",
       "category": "subtle_confidential",
       "truth": "private",
-      "marker": "moose sparrow lantern quail jasmine ivory jetty map",
       "status": 200,
       "answered_by": "local",
       "reached": "local"
@@ -123,7 +116,6 @@
       "id": "split-messages",
       "category": "secret_split_messages",
       "truth": "private",
-      "marker": "thread silk sage fjord comet dune velvet chapel",
       "status": 200,
       "answered_by": "local",
       "reached": "local"
@@ -132,7 +124,6 @@
       "id": "split-spaced",
       "category": "secret_split_spaced",
       "truth": "private",
-      "marker": "elm fox kelp sugar owl kite upland meadow",
       "status": 200,
       "answered_by": "local",
       "reached": "local"
@@ -141,7 +132,6 @@
       "id": "split-card",
       "category": "secret_split_messages",
       "truth": "private",
-      "marker": "comet sparrow valley silk badger linen nimbus pea",
       "status": 200,
       "answered_by": "local",
       "reached": "local"
@@ -150,7 +140,6 @@
       "id": "pubconf-nda",
       "category": "public_mentions_confidential",
       "truth": "public",
-      "marker": "fern pear tinder jungle vine hazel fountain lilac",
       "status": 200,
       "answered_by": "cloud",
       "reached": "cloud"
@@ -159,7 +148,6 @@
       "id": "pubconf-hipaa",
       "category": "public_mentions_confidential",
       "truth": "public",
-      "marker": "cottage table quail eagle basket seal bay spring",
       "status": 200,
       "answered_by": "cloud",
       "reached": "cloud"
@@ -168,7 +156,6 @@
       "id": "pubconf-story",
       "category": "public_mentions_confidential",
       "truth": "public",
-      "marker": "pebble meadow glacier lemon fig tower thyme tulip",
       "status": 200,
       "answered_by": "cloud",
       "reached": "cloud"
@@ -177,7 +164,6 @@
       "id": "pubconf-termsheet",
       "category": "public_mentions_confidential",
       "truth": "public",
-      "marker": "elm cobalt plum dill jungle map cream flute",
       "status": 200,
       "answered_by": "cloud",
       "reached": "cloud"
@@ -186,7 +172,6 @@
       "id": "pubconf-breach",
       "category": "public_mentions_confidential",
       "truth": "public",
-      "marker": "dell glen isle river thistle moss nimbus needle",
       "status": 200,
       "answered_by": "cloud",
       "reached": "cloud"
@@ -195,7 +180,6 @@
       "id": "pubcode-python",
       "category": "public_code",
       "truth": "public",
-      "marker": "umber rock thistle dawn field island fjord bay",
       "status": 200,
       "answered_by": "cloud",
       "reached": "cloud"
@@ -204,7 +188,6 @@
       "id": "pubcode-regex",
       "category": "public_code",
       "truth": "public",
-      "marker": "button sugar gale ridge garden silk table badger",
       "status": 200,
       "answered_by": "cloud",
       "reached": "cloud"
@@ -213,7 +196,6 @@
       "id": "unk-env",
       "category": "secret_unknown_vendor",
       "truth": "private",
-      "marker": "olive dusk willow bean lark upland dahlia needle",
       "status": 200,
       "answered_by": "local",
       "reached": "local"
@@ -222,7 +204,6 @@
       "id": "unk-bearer",
       "category": "secret_unknown_vendor",
       "truth": "private",
-      "marker": "laurel lemon badger timber fern needle garden lighthouse",
       "status": 200,
       "answered_by": "local",
       "reached": "local"
@@ -231,7 +212,6 @@
       "id": "unk-json",
       "category": "secret_unknown_vendor",
       "truth": "private",
-      "marker": "echo candle inlet needle sorrel castle wind dusk",
       "status": 200,
       "answered_by": "local",
       "reached": "local"
@@ -240,7 +220,6 @@
       "id": "inj-override",
       "category": "classifier_injection",
       "truth": "private",
-      "marker": "thyme grove dusk grape lute moose jade basket",
       "status": 200,
       "answered_by": "local",
       "reached": "local"
@@ -249,7 +228,6 @@
       "id": "inj-fence",
       "category": "classifier_injection",
       "truth": "private",
-      "marker": "wheat boat clover badger quartz fern dill haven",
       "status": 200,
       "answered_by": "local",
       "reached": "local"
@@ -258,7 +236,6 @@
       "id": "inj-public-topic",
       "category": "public_mentions_injection",
       "truth": "public",
-      "marker": "brook goose mole cheese garden loom pine pea",
       "status": 200,
       "answered_by": "cloud",
       "reached": "cloud"

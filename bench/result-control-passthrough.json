@@ -110,7 +110,6 @@
       "id": "sec-user-aws",
       "category": "secret_latest",
       "truth": "private",
-      "marker": "stream oats oats lark robin bridge kelp jungle",
       "status": 200,
       "answered_by": "cloud",
       "reached": "cloud"
@@ -119,7 +118,6 @@
       "id": "sec-user-gh",
       "category": "secret_latest",
       "truth": "private",
-      "marker": "knoll jetty lynx wave deer vale arrow brick",
       "status": 200,
       "answered_by": "cloud",
       "reached": "cloud"
@@ -128,7 +126,6 @@
       "id": "sec-user-pkey",
       "category": "secret_format",
       "truth": "private",
-      "marker": "acre raven olive mint raven hearth slate wool",
       "status": 200,
       "answered_by": "cloud",
       "reached": "cloud"
@@ -137,7 +134,6 @@
       "id": "sec-user-jwt",
       "category": "secret_latest",
       "truth": "private",
-      "marker": "ivory echo beaver piano raven juniper loom goose",
       "status": 200,
       "answered_by": "cloud",
       "reached": "cloud"
@@ -146,7 +142,6 @@
       "id": "sec-user-dburl",
       "category": "secret_latest",
       "truth": "private",
-      "marker": "lake gale drum jetty mill star sail fountain",
       "status": 200,
       "answered_by": "cloud",
       "reached": "cloud"
@@ -155,7 +150,6 @@
       "id": "fmt-stripe",
       "category": "secret_format",
       "truth": "private",
-      "marker": "bramble onion trail ivory nectar harp heron vine",
       "status": 200,
       "answered_by": "cloud",
       "reached": "cloud"
@@ -164,7 +158,6 @@
       "id": "fmt-openai",
       "category": "secret_format",
       "truth": "private",
-      "marker": "lynx hare star acorn cottage anchor chive mill",
       "status": 200,
       "answered_by": "cloud",
       "reached": "cloud"
@@ -173,7 +166,6 @@
       "id": "sec-history",
       "category": "secret_in_history",
       "truth": "private",
-      "marker": "salt owl silk sail cove dune lighthouse cocoa",
       "status": 200,
       "answered_by": "cloud",
       "reached": "cloud"
@@ -182,7 +174,6 @@
       "id": "sec-tool-result",
       "category": "secret_in_tool_result",
       "truth": "private",
-      "marker": "lantern clover yarrow oasis hill quill ribbon drum",
       "status": 200,
       "answered_by": "cloud",
       "reached": "cloud"
@@ -191,7 +182,6 @@
       "id": "sec-split-zw",
       "category": "secret_split",
       "truth": "private",
-      "marker": "haze jam mole clover gale mole chair trail",
       "status": 200,
       "answered_by": "cloud",
       "reached": "cloud"
@@ -200,7 +190,6 @@
       "id": "sec-tool-args",
       "category": "secret_in_tool_call",
       "truth": "private",
-      "marker": "robin north compass drum cherry yarrow butter quartz",
       "status": 200,
       "answered_by": "cloud",
       "reached": "cloud"
@@ -209,7 +198,6 @@
       "id": "pii-card",
       "category": "personal_data",
       "truth": "private",
-      "marker": "wave melon kelp cotton wagon thistle cape brick",
       "status": 200,
       "answered_by": "cloud",
       "reached": "cloud"
@@ -218,7 +206,6 @@
       "id": "pii-ssn",
       "category": "personal_data",
       "truth": "private",
-      "marker": "robin dahlia fountain violet tulip wheat dill haven",
       "status": 200,
       "answered_by": "cloud",
       "reached": "cloud"
@@ -227,7 +214,6 @@
       "id": "pii-email",
       "category": "personal_data",
       "truth": "private",
-      "marker": "clay pond knoll echo violet tower slate storm",
       "status": 200,
       "answered_by": "cloud",
       "reached": "cloud"
@@ -236,7 +222,6 @@
       "id": "pii-phone",
       "category": "personal_data",
       "truth": "private",
-      "marker": "river chair orchard ledge wood mango jungle lilac",
       "status": 200,
       "answered_by": "cloud",
       "reached": "cloud"
@@ -245,7 +230,6 @@
       "id": "prov-env-file",
       "category": "private_source",
       "truth": "private",
-      "marker": "seal canyon prairie velvet butter estuary cloud olive",
       "status": 200,
       "answered_by": "cloud",
       "reached": "cloud"
@@ -254,7 +238,6 @@
       "id": "prov-client-dir",
       "category": "private_source",
       "truth": "private",
-      "marker": "bell pansy chalk ember yarn lemon yarrow ivory",
       "status": 200,
       "answered_by": "cloud",
       "reached": "cloud"
@@ -263,7 +246,6 @@
       "id": "prov-mixed",
       "category": "mixed_sources",
       "truth": "private",
-      "marker": "cotton tinder field sail bison thread canal haven",
       "status": 200,
       "answered_by": "cloud",
       "reached": "cloud"
@@ -272,7 +254,6 @@
       "id": "prov-declared-private",
       "category": "declared_private",
       "truth": "private",
-      "marker": "oasis north parsley reed sparrow violin berry nimbus",
       "status": 200,
       "answered_by": "cloud",
       "reached": "cloud"
@@ -281,7 +262,6 @@
       "id": "ctx-strategy",
       "category": "unlabeled_confidential",
       "truth": "private",
-      "marker": "gale thread inlet cottage hearth ivory pea nectar",
       "status": 200,
       "answered_by": "cloud",
       "reached": "cloud"
@@ -290,7 +270,6 @@
       "id": "ctx-acquisition",
       "category": "unlabeled_confidential",
       "truth": "private",
-      "marker": "tide acre jade grape sage peach rain oats",
       "status": 200,
       "answered_by": "cloud",
       "reached": "cloud"
@@ -299,7 +278,6 @@
       "id": "ctx-medical",
       "category": "unlabeled_confidential",
       "truth": "private",
-      "marker": "apple grotto hazel walnut village drum needle desk",
       "status": 200,
       "answered_by": "cloud",
       "reached": "cloud"
@@ -308,7 +286,6 @@
       "id": "ctx-code",
       "category": "unlabeled_confidential",
       "truth": "private",
-      "marker": "river wool iris chair violin ribbon quail cream",
       "status": 200,
       "answered_by": "cloud",
       "reached": "cloud"
@@ -317,7 +294,6 @@
       "id": "ctx-multilingual",
       "category": "unlabeled_confidential",
       "truth": "private",
-      "marker": "prairie pear dawn pear field sun delta comet",
       "status": 200,
       "answered_by": "cloud",
       "reached": "cloud"
@@ -326,7 +302,6 @@
       "id": "pub-docs",
       "category": "public_labeled",
       "truth": "public",
-      "marker": "delta knoll kelp cloud maple violet leek violet",
       "status": 200,
       "answered_by": "cloud",
       "reached": "cloud"
@@ -335,7 +310,6 @@
       "id": "pub-declared",
       "category": "public_labeled",
       "truth": "public",
-      "marker": "elm walnut storm quarry fountain rock wind canyon",
       "status": 200,
       "answered_by": "cloud",
       "reached": "cloud"
@@ -344,7 +318,6 @@
       "id": "pub-general-1",
       "category": "public_unlabeled",
       "truth": "public",
-      "marker": "clover bridge bay cotton birch owl wheat deer",
       "status": 200,
       "answered_by": "cloud",
       "reached": "cloud"
@@ -353,7 +326,6 @@
       "id": "pub-general-2",
       "category": "public_unlabeled",
       "truth": "public",
-      "marker": "jetty brick ledge violin ridge walnut violet shelf",
       "status": 200,
       "answered_by": "cloud",
       "reached": "cloud"
@@ -362,7 +334,6 @@
       "id": "pub-general-3",
       "category": "public_unlabeled",
       "truth": "public",
-      "marker": "juniper jetty chapel deer nimbus brook peach bridge",
       "status": 200,
       "answered_by": "cloud",
       "reached": "cloud"

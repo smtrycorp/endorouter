@@ -85,7 +85,6 @@
       "id": "sec-user-aws",
       "category": "secret_latest",
       "truth": "private",
-      "marker": "oats wheat ember grove acorn jasmine maple violin",
       "status": 200,
       "answered_by": "local",
       "reached": "local"
@@ -94,7 +93,6 @@
       "id": "sec-user-gh",
       "category": "secret_latest",
       "truth": "private",
-      "marker": "sorrel raven vale ribbon copper chalk meadow butter",
       "status": 200,
       "answered_by": "local",
       "reached": "local"
@@ -103,7 +101,6 @@
       "id": "sec-user-pkey",
       "category": "secret_format",
       "truth": "private",
-      "marker": "glacier desk dill peak haze chair spring nutmeg",
       "status": 200,
       "answered_by": "local",
       "reached": "local"
@@ -112,7 +109,6 @@
       "id": "sec-user-jwt",
       "category": "secret_latest",
       "truth": "private",
-      "marker": "prairie upland amber tower compass oats carrot walnut",
       "status": 200,
       "answered_by": "local",
       "reached": "local"
@@ -121,7 +117,6 @@
       "id": "sec-user-dburl",
       "category": "secret_latest",
       "truth": "private",
-      "marker": "wood velvet bluff estuary cocoa hollow table robin",
       "status": 200,
       "answered_by": "local",
       "reached": "local"
@@ -130,7 +125,6 @@
       "id": "fmt-stripe",
       "category": "secret_format",
       "truth": "private",
-      "marker": "oasis wool sky arrow hollow harp lilac acre",
       "status": 200,
       "answered_by": "local",
       "reached": "local"
@@ -139,7 +133,6 @@
       "id": "fmt-openai",
       "category": "secret_format",
       "truth": "private",
-      "marker": "mesa mango sun jungle tea river opal marble",
       "status": 200,
       "answered_by": "local",
       "reached": "local"
@@ -148,7 +141,6 @@
       "id": "sec-history",
       "category": "secret_in_history",
       "truth": "private",
-      "marker": "clover hill brook amber hare brick gale prairie",
       "status": 200,
       "answered_by": "local",
       "reached": "local"
@@ -157,7 +149,6 @@
       "id": "sec-tool-result",
       "category": "secret_in_tool_result",
       "truth": "private",
-      "marker": "jetty shelf jetty aspen slate radish map melon",
       "status": 200,
       "answered_by": "local",
       "reached": "local"
@@ -166,7 +157,6 @@
       "id": "sec-split-zw",
       "category": "secret_split",
       "truth": "private",
-      "marker": "salt rice cobalt hazel field pepper rope nutmeg",
       "status": 200,
       "answered_by": "local",
       "reached": "local"
@@ -175,7 +165,6 @@
       "id": "sec-tool-args",
       "category": "secret_in_tool_call",
       "truth": "private",
-      "marker": "rain walnut meadow swan pansy dell desk knoll",
       "status": 200,
       "answered_by": "local",
       "reached": "local"
@@ -184,7 +173,6 @@
       "id": "pii-card",
       "category": "personal_data",
       "truth": "private",
-      "marker": "chalk desk seal ember turnip tinder cliff leek",
       "status": 200,
       "answered_by": "local",
       "reached": "local"
@@ -193,7 +181,6 @@
       "id": "pii-ssn",
       "category": "personal_data",
       "truth": "private",
-      "marker": "bridge lark table thread glacier wood cart swan",
       "status": 200,
       "answered_by": "local",
       "reached": "local"
@@ -202,7 +189,6 @@
       "id": "pii-email",
       "category": "personal_data",
       "truth": "private",
-      "marker": "fern grape map moon dove dawn cherry lighthouse",
       "status": 200,
       "answered_by": "local",
       "reached": "local"
@@ -211,7 +197,6 @@
       "id": "pii-phone",
       "category": "personal_data",
       "truth": "private",
-      "marker": "isle dell violet lake grotto chive grotto compass",
       "status": 200,
       "answered_by": "local",
       "reached": "local"
@@ -220,7 +205,6 @@
       "id": "prov-env-file",
       "category": "private_source",
       "truth": "private",
-      "marker": "haze wool hill otter raven summit violet frost",
       "status": 200,
       "answered_by": "local",
       "reached": "local"
@@ -229,7 +213,6 @@
       "id": "prov-client-dir",
       "category": "private_source",
       "truth": "private",
-      "marker": "pine milk cotton juniper thread breeze oats dusk",
       "status": 200,
       "answered_by": "local",
       "reached": "local"
@@ -238,7 +221,6 @@
       "id": "prov-mixed",
       "category": "mixed_sources",
       "truth": "private",
-      "marker": "kettle brook cedar dawn lagoon honey cream falcon",
       "status": 200,
       "answered_by": "local",
       "reached": "local"
@@ -247,7 +229,6 @@
       "id": "prov-declared-private",
       "category": "declared_private",
       "truth": "private",
-      "marker": "boat zephyr bell violet fox reed lake lilac",
       "status": 200,
       "answered_by": "local",
       "reached": "local"
@@ -256,7 +237,6 @@
       "id": "ctx-strategy",
       "category": "unlabeled_confidential",
       "truth": "private",
-      "marker": "juniper oak storm vale star grape jade goose",
       "status": 200,
       "answered_by": "local",
       "reached": "local"
@@ -265,7 +245,6 @@
       "id": "ctx-acquisition",
       "category": "unlabeled_confidential",
       "truth": "private",
-      "marker": "creek drift ridge toast sugar berry spring silk",
       "status": 200,
       "answered_by": "local",
       "reached": "local"
@@ -274,7 +253,6 @@
       "id": "ctx-medical",
       "category": "unlabeled_confidential",
       "truth": "private",
-      "marker": "thicket oats fern clover bread jam cloud lantern",
       "status": 200,
       "answered_by": "local",
       "reached": "local"
@@ -283,7 +261,6 @@
       "id": "ctx-code",
       "category": "unlabeled_confidential",
       "truth": "private",
-      "marker": "aspen badger breeze sage wave beacon honey walnut",
       "status": 200,
       "answered_by": "local",
       "reached": "local"
@@ -292,7 +269,6 @@
       "id": "ctx-multilingual",
       "category": "unlabeled_confidential",
       "truth": "private",
-      "marker": "pea star wheel brick eagle upland falcon sugar",
       "status": 200,
       "answered_by": "local",
       "reached": "local"
@@ -301,7 +277,6 @@
       "id": "pub-docs",
       "category": "public_labeled",
       "truth": "public",
-      "marker": "onion pea inlet moose cream grape rock dawn",
       "status": 200,
       "answered_by": "cloud",
       "reached": "cloud"
@@ -310,7 +285,6 @@
       "id": "pub-declared",
       "category": "public_labeled",
       "truth": "public",
-      "marker": "nutmeg jade toast jetty lark eagle otter vine",
       "status": 200,
       "answered_by": "cloud",
       "reached": "cloud"
@@ -319,7 +293,6 @@
       "id": "pub-general-1",
       "category": "public_unlabeled",
       "truth": "public",
-      "marker": "wagon laurel vale dawn tea knoll amber goose",
       "status": 200,
       "answered_by": "local",
       "reached": "local"
@@ -328,7 +301,6 @@
       "id": "pub-general-2",
       "category": "public_unlabeled",
       "truth": "public",
-      "marker": "pansy gravel lake owl chair nutmeg lilac echo",
       "status": 200,
       "answered_by": "local",
       "reached": "local"
@@ -337,7 +309,6 @@
       "id": "pub-general-3",
       "category": "public_unlabeled",
       "truth": "public",
-      "marker": "cloud sparrow hearth dune shore nimbus comet parsley",
       "status": 200,
       "answered_by": "local",
       "reached": "local"

@@ -99,7 +99,6 @@
       "id": "sec-user-aws",
       "category": "secret_latest",
       "truth": "private",
-      "marker": "glacier milk harbor opal knoll wool kettle lark",
       "status": 400,
       "answered_by": null,
       "refusal": "{\"error\":{\"message\":\"Content blocked: aws_access_key pattern detected\",\"type\":\"invalid_request_error\",\"param\":null,\"code\":\"400\",\"provider_specific_fields\":{\"error\":\"Content blocked: aws_access_key pat",
@@ -109,7 +108,6 @@
       "id": "sec-user-gh",
       "category": "secret_latest",
       "truth": "private",
-      "marker": "orchard valley glen upland rice sky map bridge",
       "status": 400,
       "answered_by": null,
       "refusal": "{\"error\":{\"message\":\"Content blocked: github_token pattern detected\",\"type\":\"invalid_request_error\",\"param\":null,\"code\":\"400\",\"provider_specific_fields\":{\"error\":\"Content blocked: github_token pattern",
@@ -119,7 +117,6 @@
       "id": "sec-user-pkey",
       "category": "secret_format",
       "truth": "private",
-      "marker": "radish olive copper lemon linen dove kite bramble",
       "status": 200,
       "answered_by": "cloud",
       "reached": "cloud"
@@ -128,7 +125,6 @@
       "id": "sec-user-jwt",
       "category": "secret_latest",
       "truth": "private",
-      "marker": "plum honey dove flute wheel brick vale thyme",
       "status": 400,
       "answered_by": null,
       "refusal": "{\"error\":{\"message\":\"Content blocked: aws_secret_key pattern detected\",\"type\":\"invalid_request_error\",\"param\":null,\"code\":\"400\",\"provider_specific_fields\":{\"error\":\"Content blocked: aws_secret_key pat",
@@ -138,7 +134,6 @@
       "id": "sec-user-dburl",
       "category": "secret_latest",
       "truth": "private",
-      "marker": "thyme quail delta hearth dill toast sparrow bramble",
       "status": 400,
       "answered_by": null,
       "refusal": "{\"error\":{\"message\":\"Content blocked: email pattern detected\",\"type\":\"invalid_request_error\",\"param\":null,\"code\":\"400\",\"provider_specific_fields\":{\"error\":\"Content blocked: email pattern detected\",\"pa",
@@ -148,7 +143,6 @@
       "id": "fmt-stripe",
       "category": "secret_format",
       "truth": "private",
-      "marker": "hazel eagle quill dell haven mill lute cedar",
       "status": 200,
       "answered_by": "cloud",
       "reached": "cloud"
@@ -157,7 +151,6 @@
       "id": "fmt-openai",
       "category": "secret_format",
       "truth": "private",
-      "marker": "kelp delta needle iris delta haven kettle dill",
       "status": 200,
       "answered_by": "cloud",
       "reached": "cloud"
@@ -166,7 +159,6 @@
       "id": "sec-history",
       "category": "secret_in_history",
       "truth": "private",
-      "marker": "thicket sun owl lute wagon loom sugar nutmeg",
       "status": 400,
       "answered_by": null,
       "refusal": "{\"error\":{\"message\":\"Content blocked: aws_access_key pattern detected\",\"type\":\"invalid_request_error\",\"param\":null,\"code\":\"400\",\"provider_specific_fields\":{\"error\":\"Content blocked: aws_access_key pat",
@@ -176,7 +168,6 @@
       "id": "sec-tool-result",
       "category": "secret_in_tool_result",
       "truth": "private",
-      "marker": "lemon umber hollow lagoon seal breeze zephyr thicket",
       "status": 400,
       "answered_by": null,
       "refusal": "{\"error\":{\"message\":\"Content blocked: slack_token pattern detected\",\"type\":\"invalid_request_error\",\"param\":null,\"code\":\"400\",\"provider_specific_fields\":{\"error\":\"Content blocked: slack_token pattern d",
@@ -186,7 +177,6 @@
       "id": "sec-split-zw",
       "category": "secret_split",
       "truth": "private",
-      "marker": "quarry apple star echo chive ledge tea cobalt",
       "status": 200,
       "answered_by": "cloud",
       "reached": "cloud"
@@ -195,7 +185,6 @@
       "id": "sec-tool-args",
       "category": "secret_in_tool_call",
       "truth": "private",
-      "marker": "mill rock north wagon lute chair cart drum",
       "status": 400,
       "answered_by": null,
       "refusal": "{\"error\":{\"message\":\"Content blocked: github_token pattern detected\",\"type\":\"invalid_request_error\",\"param\":null,\"code\":\"400\",\"provider_specific_fields\":{\"error\":\"Content blocked: github_token pattern",
@@ -205,7 +194,6 @@
       "id": "pii-card",
       "category": "personal_data",
       "truth": "private",
-      "marker": "saddle grove tower robin comet creek storm brook",
       "status": 400,
       "answered_by": null,
       "refusal": "{\"error\":{\"message\":\"Content blocked: credit_card pattern detected\",\"type\":\"invalid_request_error\",\"param\":null,\"code\":\"400\",\"provider_specific_fields\":{\"error\":\"Content blocked: credit_card pattern d",
@@ -215,7 +203,6 @@
       "id": "pii-ssn",
       "category": "personal_data",
       "truth": "private",
-      "marker": "map quartz flute mint inlet village cliff heron",
       "status": 400,
       "answered_by": null,
       "refusal": "{\"error\":{\"message\":\"Content blocked: us_ssn pattern detected\",\"type\":\"invalid_request_error\",\"param\":null,\"code\":\"400\",\"provider_specific_fields\":{\"error\":\"Content blocked: us_ssn pattern detected\",\"",
@@ -225,7 +212,6 @@
       "id": "pii-email",
       "category": "personal_data",
       "truth": "private",
-      "marker": "estuary parsley cove lighthouse pond walnut apple indigo",
       "status": 400,
       "answered_by": null,
       "refusal": "{\"error\":{\"message\":\"Content blocked: email pattern detected\",\"type\":\"invalid_request_error\",\"param\":null,\"code\":\"400\",\"provider_specific_fields\":{\"error\":\"Content blocked: email pattern detected\",\"pa",
@@ -235,7 +221,6 @@
       "id": "pii-phone",
       "category": "personal_data",
       "truth": "private",
-      "marker": "tide amber tinder bell inlet lark marble tinder",
       "status": 400,
       "answered_by": null,
       "refusal": "{\"error\":{\"message\":\"Content blocked: us_phone pattern detected\",\"type\":\"invalid_request_error\",\"param\":null,\"code\":\"400\",\"provider_specific_fields\":{\"error\":\"Content blocked: us_phone pattern detecte",
@@ -245,7 +230,6 @@
       "id": "prov-env-file",
       "category": "private_source",
       "truth": "private",
-      "marker": "lamp candle wheel cart thistle valley moss anchor",
       "status": 200,
       "answered_by": "cloud",
       "reached": "cloud"
@@ -254,7 +238,6 @@
       "id": "prov-client-dir",
       "category": "private_source",
       "truth": "private",
-      "marker": "radish valley grove parsley goose island cheese ledge",
       "status": 200,
       "answered_by": "cloud",
       "reached": "cloud"
@@ -263,7 +246,6 @@
       "id": "prov-mixed",
       "category": "mixed_sources",
       "truth": "private",
-      "marker": "lute leek linen boat jungle aspen brick creek",
       "status": 200,
       "answered_by": "cloud",
       "reached": "cloud"
@@ -272,7 +254,6 @@
       "id": "prov-declared-private",
       "category": "declared_private",
       "truth": "private",
-      "marker": "upland amber rain flute robin wheel echo maple",
       "status": 200,
       "answered_by": "cloud",
       "reached": "cloud"
@@ -281,7 +262,6 @@
       "id": "ctx-strategy",
       "category": "unlabeled_confidential",
       "truth": "private",
-      "marker": "wagon tinder mango brick peach hare rock wheel",
       "status": 200,
       "answered_by": "cloud",
       "reached": "cloud"
@@ -290,7 +270,6 @@
       "id": "ctx-acquisition",
       "category": "unlabeled_confidential",
       "truth": "private",
-      "marker": "dill parsley hare sun dune candle clover kettle",
       "status": 200,
       "answered_by": "cloud",
       "reached": "cloud"
@@ -299,7 +278,6 @@
       "id": "ctx-medical",
       "category": "unlabeled_confidential",
       "truth": "private",
-      "marker": "canal otter moon spring mesa drift north cart",
       "status": 200,
       "answered_by": "cloud",
       "reached": "cloud"
@@ -308,7 +286,6 @@
       "id": "ctx-code",
       "category": "unlabeled_confidential",
       "truth": "private",
-      "marker": "berry butter piano canal wood oasis village cliff",
       "status": 200,
       "answered_by": "cloud",
       "reached": "cloud"
@@ -317,7 +294,6 @@
       "id": "ctx-multilingual",
       "category": "unlabeled_confidential",
       "truth": "private",
-      "marker": "dahlia cliff button kite opal yarn hazel bread",
       "status": 200,
       "answered_by": "cloud",
       "reached": "cloud"
@@ -326,7 +302,6 @@
       "id": "pub-docs",
       "category": "public_labeled",
       "truth": "public",
-      "marker": "inlet marble pepper ember harp lagoon thread boat",
       "status": 200,
       "answered_by": "cloud",
       "reached": "cloud"
@@ -335,7 +310,6 @@
       "id": "pub-declared",
       "category": "public_labeled",
       "truth": "public",
-      "marker": "silk harp echo delta brick pine umber ember",
       "status": 200,
       "answered_by": "cloud",
       "reached": "cloud"
@@ -344,7 +318,6 @@
       "id": "pub-general-1",
       "category": "public_unlabeled",
       "truth": "public",
-      "marker": "lute mesa drum melon cedar turnip harbor kelp",
       "status": 200,
       "answered_by": "cloud",
       "reached": "cloud"
@@ -353,7 +326,6 @@
       "id": "pub-general-2",
       "category": "public_unlabeled",
       "truth": "public",
-      "marker": "tower ribbon nectar boat beaver tinder dawn brick",
       "status": 200,
       "answered_by": "cloud",
       "reached": "cloud"
@@ -362,7 +334,6 @@
       "id": "pub-general-3",
       "category": "public_unlabeled",
       "truth": "public",
-      "marker": "violin lake apple glen robin orchard star meadow",
       "status": 200,
       "answered_by": "cloud",
       "reached": "cloud"
