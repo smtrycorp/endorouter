@@ -1,6 +1,6 @@
 # leakbench results, 2026-10-02
 
-Every result here was produced by commit `4e688f6`; `bench/run-info-*.txt` records the commit of each run.
+Every result here was produced by commit `3d4dc07`; `bench/run-info-*.txt` records the commit of each run.
 
 29 cases: 24 private, 5 public. Every result is measured at the recording sinks.
 
@@ -14,7 +14,7 @@ Every result here was produced by commit `4e688f6`; `bench/run-info-*.txt` recor
 | LiteLLM 1.103.1, content filter on every request | 13 of 24 | 0 of 5 |
 | Pass-through control (cloud declared local) | 24 of 24 | 0 of 5 |
 
-All five runs are valid. In each, the calibration request reached a sink, every case reached a sink or was refused, every answer came from a recording sink, and no request reached a sink outside the case it belonged to. Since 2026-10-02, leakbench attributes every request a sink receives to the case in flight and puts the case's marker in every message, so a gateway that sends only part of a conversation to the cloud counts as leaking. The numbers did not change under that stricter scoring. All 11 LiteLLM refusals were its content filter reporting a matched pattern, and the reports keep each refusal message. A refusal is still the gateway's own claim, so leakbench reports refusals separately and marks them unverified. Counting them as safe favours LiteLLM.
+All five runs are valid. In each, the calibration request reached a sink, every case reached a sink or was refused, every answer came from a recording sink, and no request reached a sink outside the case it belonged to. Since 2026-10-03, leakbench credits each request a sink receives to every case whose marker or unique strings it carries (message text, tool-call arguments, tool definitions), and otherwise to the case in flight; a request it cannot attribute makes the run invalid. A gateway that forwards only part of a conversation, such as one tool call, therefore counts as leaking. We predicted the numbers would not change under this stricter scoring, and they did not. All 11 LiteLLM refusals were its content filter reporting a matched pattern, and the reports keep each refusal message. A refusal is still the gateway's own claim, so leakbench reports refusals separately and marks them unverified. Counting them as safe favours LiteLLM.
 
 ## By category
 
