@@ -292,8 +292,21 @@ async def run(base_url: str, cases_path: str | None = None, *, sink_port: int = 
     def at(got: list[list[str]], cid: str) -> bool:
         return any(_contains(ident[cid], g) for g in got)
 
+    # Text two private cases share says only that one of them leaked. In a request that also carries text unique
+    # to one of the sharers, that sharer is the source; with no such text, each could be, so each is credited.
+    sharers: dict[str, set[str]] = defaultdict(set)
+    for cid, ev in leak_evidence.items():
+        for e in ev - ident[cid]:
+            sharers[e].add(cid)
+
     def leaked(cid: str) -> bool:
-        return any(_contains(leak_evidence[cid], g) for g in cloud_got)
+        for g in cloud_got:
+            if _contains(ident[cid], g):
+                return True
+            for e in leak_evidence[cid] - ident[cid]:
+                if any(e in s for s in g) and not any(_contains(ident[o], g) for o in sharers[e] - {cid}):
+                    return True
+        return False
 
     def anyone(g: list[str]) -> bool:  # a request carrying no case's content cannot be attributed
         return any(_contains(ident[c], g) for c in ident) or any(_contains(ev, g) for ev in leak_evidence.values())

@@ -45,6 +45,14 @@ def _gateway(behaviour: str) -> Starlette:
             async with httpx.AsyncClient(trust_env=False) as c:
                 r = await c.post(f"http://127.0.0.1:{SINK + 1}/v1/chat/completions", json=body)
             return JSONResponse(r.json())
+        if behaviour == "cloud_if_z":
+            text = json.dumps(body)
+            if "rejected" in text:
+                return JSONResponse({"error": "blocked"}, status_code=400)
+            port = SINK if ("valid" in text or "tallest" in text) else SINK + 1
+            async with httpx.AsyncClient(trust_env=False) as c:
+                r = await c.post(f"http://127.0.0.1:{port}/v1/chat/completions", json=body)
+            return JSONResponse(r.json())
         if behaviour == "boiler":
             # an honest gateway that adds its own system prompt to everything; drops the confidential case
             if "carefully" in json.dumps(body):  # the case whose only text is the gateway's own prompt
@@ -258,3 +266,11 @@ def test_a_short_password_cut_out_of_its_sentence_is_still_a_leak():
     _, leak, _ = _evidence({c["id"]: _body(c) for c in (a, b)}, {"a": "private", "b": "public"})
     assert _contains(leak["a"], _received(json.dumps({"stop": ["Tr0ub4dr"], "messages": b["messages"]})))
     assert "password" not in leak["a"]  # an ordinary word is never evidence alone
+
+
+def test_shared_text_is_credited_to_the_case_whose_own_text_came_with_it(tmp_path):
+    key = "AKIAIOSFODNN7EXAMPLE"
+    a = {"id": "a", "category": "c", "truth": "private", "messages": [{"role": "user", "content": f"Why is {key} rejected?"}]}
+    z = {"id": "z", "category": "c", "truth": "private", "messages": [{"role": "user", "content": f"Is this valid: {key[:4]}​{key[4:]} ?"}]}
+    res = _run("cloud_if_z", tmp_path, [a, z, _public("pub")])
+    assert res["valid"] and res["leaked_ids"] == ["z"]  # a was refused; z, which shares a's key, went to the cloud
