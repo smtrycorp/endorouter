@@ -75,10 +75,37 @@ REFUSAL_STATUSES = {400, 403, 451}
 CASE_METADATA = {"id", "category", "truth", "sources", "label", "model", "messages"}
 
 
+MARKER_WORDS = (
+    "apple river lantern otter violet copper meadow pebble harbor willow canyon falcon "
+    "garden thistle maple ember breeze cedar comet dune feather glacier hazel island "
+    "jasmine kettle lemon marble nectar orchard pepper quartz raven saddle tulip umber "
+    "valley walnut yarrow zephyr acorn basket candle daisy eagle fern grove hollow "
+    "ivory juniper kite lilac mango nutmeg olive parsley quill ribbon sparrow timber "
+    "velvet wheat amber bramble cobalt dahlia elm fig gravel heron indigo jade "
+    "kelp laurel moss nimbus opal pine rain sage tide upland vine wren "
+    "aspen birch clover delta echo flint gale hearth inlet jetty knoll ledge "
+    "mist north oak prairie quarry reed shore trail vale wave yew anchor "
+    "beacon cove drift estuary fjord grotto haven isle jungle lagoon mesa oasis "
+    "pond ridge summit thicket brook cliff dell field glen hill lake marsh "
+    "peak rock spring stream wood bay cape creek dawn dusk frost haze "
+    "moon sky snow star storm sun cloud wind bread butter cheese cocoa "
+    "cream honey jam milk oats rice salt sugar tea toast berry cherry "
+    "grape lime melon peach pear plum bean carrot corn leek onion pea "
+    "radish turnip basil chive dill mint thyme cotton linen silk wool button "
+    "needle thread yarn chair desk lamp shelf table bell drum flute harp "
+    "horn lute piano violin bridge canal castle chapel cottage fountain lighthouse mill "
+    "tower village arrow compass map rope sail boat cart wagon wheel badger "
+    "beaver bison deer fox hare lynx mole moose owl seal swan acre "
+    "bluff brick chalk clay dove goose iris lark loom pansy quail robin "
+    "slate sorrel thrush tinder "
+).split()
+
+
 def _marked(case: dict, model: str | None = None) -> tuple[dict, str]:
-    # random and fixed-length, so no marker can contain another (lbk-p inside lbk-public was a false leak); lowercase
-    # letters only, so the marker itself never looks like a secret to any detector (a random hex marker did)
-    marker = "lbk" + "".join(secrets.choice("abcdefghijklmnopqrstuvwxyz") for _ in range(24))
+    # Eight words drawn from a plain list: unique (256^8 = 2^64), fixed length so no marker contains another, and
+    # ordinary-looking text, so it changes no verdict. A random-letter token (the earlier form) looked like an
+    # identifier, and a local classifier called a public question private because of it.
+    marker = " ".join(secrets.choice(MARKER_WORDS) for _ in range(8))
     msgs = json.loads(json.dumps(case["messages"]))
     # One marker, before everything the case says, so it never sits between two pieces a detector reads as one (a
     # key split across messages, or across a message and a tool call, must stay joinable) and adds no turn after a
@@ -149,7 +176,7 @@ def _case_strings(bodies: dict[str, dict], markers: set[str]) -> dict[str, set[s
 
 
 def _unmarked(s: str, markers: set[str]) -> str:
-    if "[lbk" in s:
+    if "[" in s:
         for m in markers:
             s = s.replace(f"[{m}]\n", "").replace(f"[{m}]", "")
     return s
