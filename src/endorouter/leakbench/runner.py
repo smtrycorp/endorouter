@@ -45,6 +45,7 @@ from starlette.responses import JSONResponse
 from starlette.routing import Route
 
 from ..detectors import normalise
+from ..validate import validate as validate_request
 
 
 def _fake_openai(name: str, seen: list[str]) -> Starlette:
@@ -114,7 +115,7 @@ def _payload(body) -> list[str]:
     stack: list[tuple[object, bool]] = []  # (value, its keys are schema property names)
     for m in body.get("messages") or []:
         if isinstance(m, dict):
-            stack += [(m.get(k), False) for k in ("content", "refusal") if m.get(k) is not None]
+            stack += [(m.get(k), False) for k in ("content", "refusal", "name") if m.get(k) is not None]
             for call in m.get("tool_calls") or []:
                 if isinstance(call, dict) and isinstance(call.get("function"), dict):
                     stack += [(call["function"].get(k), False) for k in ("name", "arguments")]
@@ -132,13 +133,16 @@ def _payload(body) -> list[str]:
                 if props and isinstance(k, str):
                     out.append(k)  # a schema's property name is content: it can be a secret
                 if props or k not in SYNTAX_KEYS:  # a property may be called "type" or "id" and still hold content
-                    stack.append((x, k == "properties"))
+                    if k in ("enum", "const", "default", "examples"):
+                        stack.append((x, True))  # data a schema allows: every key in it is content, never syntax
+                    else:
+                        stack.append((x, k == "properties"))
         elif isinstance(v, list):
-            stack += [(x, False) for x in v]
+            stack += [(x, props) for x in v]  # items of a data list (an enum) are data too
     return out
 
 
-_TOKEN = re.compile(r"[^\s\"'`,;:()\[\]{}<>]+")
+_PIECE = re.compile(r"[^\s\"'`,;:=()\[\]{}<>]+")  # a word split at the punctuation that joins a name to a value
 _WORDLIKE = re.compile(r"[A-Za-z][a-z]+")  # an ordinary word ("instructions", "Confidential"): never a secret alone
 
 
@@ -155,7 +159,9 @@ def _case_evidence(body: dict) -> tuple[set[str], set[str]]:
     Ordinary words are not evidence alone: a gateway's own wording would otherwise match them. Also returns the
     strings too short to measure."""
     strings = {_norm(s) for s in _payload(body)} - {""}
-    words = {w.strip(".!?") for s in strings for w in _TOKEN.findall(s)}
+    # whole words (a password keeps its punctuation: ab12;CD34) and the pieces of words (KEY=value gives value)
+    words = {w.strip(".,!?\"'`()[]{}<>") for s in strings for w in s.split()}
+    words |= {w.strip(".!?") for s in strings for w in _PIECE.findall(s)}
     secretish = {w for w in words if len(w) >= EVIDENCE_MIN and not _WORDLIKE.fullmatch(w)}
     evidence = {s for s in strings if len(s) >= EVIDENCE_MIN} | secretish
     return evidence, {s for s in strings if len(s) < EVIDENCE_MIN}
@@ -164,6 +170,8 @@ def _case_evidence(body: dict) -> tuple[set[str], set[str]]:
 def validate_suite(cases: list[dict]) -> None:
     """Refuse a suite that would silently change the experiment: a repeated id (one body would replace another), a
     truth other than "private" or "public" (it would be scored as public), or a case with no messages."""
+    if not cases:
+        raise ValueError("the suite has no cases")
     seen = {CALIBRATION["id"]}
     for i, c in enumerate(cases):
         if not isinstance(c, dict):
@@ -177,6 +185,9 @@ def validate_suite(cases: list[dict]) -> None:
         if not isinstance(c.get("messages"), list) or not c["messages"] or not all(
                 isinstance(m, dict) and isinstance(m.get("role"), str) for m in c["messages"]):
             raise ValueError(f"case {cid!r}: messages must be a non-empty list of objects with a role")
+        problem = validate_request(_body(c))  # the request any gateway would get must be a well-formed one
+        if problem:
+            raise ValueError(f"case {cid!r}: not a valid chat request ({problem}), so a refusal of it would say nothing")
         sources = c.get("sources", [])
         if not isinstance(sources, list) or not all(isinstance(s, str) and s for s in sources):
             raise ValueError(f"case {cid!r}: sources must be a list of strings")
@@ -239,6 +250,7 @@ async def run(base_url: str, cases_path: str | None = None, *, sink_port: int = 
     cloud = await _serve(_fake_openai("fake-cloud", cloud_seen), sink_port)
     local = await _serve(_fake_openai("fake-local", local_seen), sink_port + 1)
     rows: list[dict] = []
+    calibration_seen = (0, 0)
     try:
         async with httpx.AsyncClient(timeout=60, trust_env=False) as client:
             for c in [CALIBRATION, *cases]:
@@ -263,6 +275,9 @@ async def run(base_url: str, cases_path: str | None = None, *, sink_port: int = 
                 if unmeasured.get(c["id"]):  # strings too short to tell apart: a leak of only these is not seen
                     row["unmeasured"] = sorted(unmeasured[c["id"]])
                 rows.append(row)
+                if c is CALIBRATION:  # what the gateway sent for calibration alone, before any case could add to it
+                    await asyncio.sleep(0.2)
+                    calibration_seen = len(cloud_seen), len(local_seen)
         # the sinks keep listening a little after the last case: a gateway that sends late is caught, not missed
         await asyncio.sleep(settle_s)
     finally:
@@ -279,7 +294,8 @@ async def run(base_url: str, cases_path: str | None = None, *, sink_port: int = 
     # system prompt it adds, default stop sequences, its own tools). It is in every request the gateway sends, so it
     # can identify no case and prove no leak; evidence found inside it is dropped.
     cal_own = {_norm(s) for s in _payload(bodies[CALIBRATION["id"]])}
-    boilerplate = {s for g in cloud_got + local_got if _contains(ident[CALIBRATION["id"]], g)
+    n_cloud, n_local = calibration_seen
+    boilerplate = {s for g in cloud_got[:n_cloud] + local_got[:n_local] if _contains(ident[CALIBRATION["id"]], g)
                    for s in g if s and not any(s in own for own in cal_own)}
 
     def own(evidence: set[str]) -> set[str]:
@@ -295,9 +311,11 @@ async def run(base_url: str, cases_path: str | None = None, *, sink_port: int = 
     # Text two private cases share says only that one of them leaked. In a request that also carries text unique
     # to one of the sharers, that sharer is the source; with no such text, each could be, so each is credited.
     sharers: dict[str, set[str]] = defaultdict(set)
+    texts = {cid: [_norm(s) for s in _payload(b)] for cid, b in bodies.items()}
     for cid, ev in leak_evidence.items():
         for e in ev - ident[cid]:
-            sharers[e].add(cid)
+            # every case whose text contains it, matched the way sinks are, not only cases with the identical string
+            sharers[e] = {o for o, ss in texts.items() if any(e in s for s in ss)}
 
     def leaked(cid: str) -> bool:
         for g in cloud_got:

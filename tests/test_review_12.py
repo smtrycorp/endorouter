@@ -279,3 +279,37 @@ def test_a_suite_that_would_change_the_experiment_is_refused(cases, match):
 def test_a_short_string_that_normalises_into_a_format_is_still_scanned(text, rule):
     body = {"model": "auto", "messages": [{"role": "user", "content": "hi"}], "stop": [text]}
     assert rule in {f.rule for f in scan_request(body)}
+
+
+# review round 14 (Codex's sixth pass)
+@pytest.mark.parametrize("secret,carried", [
+    ("AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE", "AKIAIOSFODNN7EXAMPLE"),
+    ("My password is ab12;CD34", "ab12;CD34"),
+])
+def test_a_value_cut_from_its_assignment_or_a_punctuated_password_is_seen(secret, carried):
+    a = {"id": "a", "truth": "private", "messages": [{"role": "user", "content": secret}]}
+    b = {"id": "b", "truth": "public", "messages": [{"role": "user", "content": "What is the tallest mountain?"}]}
+    _, leak, _ = _evidence(*_bodies(a, b))
+    assert _contains(leak["a"], _received(json.dumps({"messages": [{"role": "user", "content": carried}]})))
+
+
+def test_a_message_name_and_enum_data_are_content():
+    a = {"id": "a", "truth": "private", "messages": [
+        {"role": "user", "name": "AKIAIOSFODNN7EXAMPLE", "content": "a private request text"}],
+        "tools": [{"type": "function", "function": {"name": "f", "parameters": {
+            "type": "object", "enum": [{"type": "ghp_a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8"}]}}}]}
+    b = {"id": "b", "truth": "public", "messages": [{"role": "user", "content": "What is the tallest mountain?"}]}
+    _, leak, _ = _evidence(*_bodies(a, b))
+    assert {"AKIAIOSFODNN7EXAMPLE", "ghp_a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8"} <= leak["a"]
+
+
+@pytest.mark.parametrize("cases", [
+    [],
+    [{"id": "bad_role", "truth": "private", "messages": [{"role": "usr", "content": "AKIAIOSFODNN7EXAMPLE"}]}],
+    [{"id": "bad_content", "truth": "private", "messages": [{"role": "user", "content": 42}]}],
+])
+def test_a_suite_whose_requests_any_router_would_refuse_is_refused(cases):
+    from endorouter.leakbench.runner import validate_suite
+
+    with pytest.raises(ValueError):
+        validate_suite(cases)

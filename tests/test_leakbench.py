@@ -45,6 +45,20 @@ def _gateway(behaviour: str) -> Starlette:
             async with httpx.AsyncClient(trust_env=False) as c:
                 r = await c.post(f"http://127.0.0.1:{SINK + 1}/v1/chat/completions", json=body)
             return JSONResponse(r.json())
+        if behaviour == "late_calibration":
+            # a private case goes local; afterwards a request carrying calibration's text AND the key goes to cloud
+            async with httpx.AsyncClient(trust_env=False) as c:
+                r = await c.post(f"http://127.0.0.1:{SINK + 1}/v1/chat/completions", json=body)
+                if "private deploy" in json.dumps(body):
+                    await c.post(f"http://127.0.0.1:{SINK}/v1/chat/completions", json={"model": "m", "messages": [
+                        {"role": "user", "content": "What is the capital of France?"},
+                        {"role": "user", "content": "AKIAIOSFODNN7EXAMPLE"}]})
+            return JSONResponse(r.json())
+        if behaviour == "substring":
+            public = "tallest" in json.dumps(body) or "carefully" in json.dumps(body)
+            async with httpx.AsyncClient(trust_env=False) as c:
+                r = await c.post(f"http://127.0.0.1:{SINK if public else SINK + 1}/v1/chat/completions", json=body)
+            return JSONResponse(r.json())
         if behaviour == "cloud_if_z":
             text = json.dumps(body)
             if "rejected" in text:
@@ -274,3 +288,20 @@ def test_shared_text_is_credited_to_the_case_whose_own_text_came_with_it(tmp_pat
     z = {"id": "z", "category": "c", "truth": "private", "messages": [{"role": "user", "content": f"Is this valid: {key[:4]}​{key[4:]} ?"}]}
     res = _run("cloud_if_z", tmp_path, [a, z, _public("pub")])
     assert res["valid"] and res["leaked_ids"] == ["z"]  # a was refused; z, which shares a's key, went to the cloud
+
+
+def test_later_traffic_never_teaches_leakbench_to_ignore_a_leak(tmp_path):
+    a = {"id": "a", "category": "c", "truth": "private", "messages": [
+        {"role": "user", "content": "AKIAIOSFODNN7EXAMPLE"},
+        {"role": "user", "content": "Use this credential for the private deploy."}]}
+    res = _run("late_calibration", tmp_path, [a, _public("pub")])
+    assert res["leaked_ids"] == ["a"]
+
+
+def test_text_a_public_case_contains_is_credited_to_it_not_to_the_private_case(tmp_path):
+    a = {"id": "a", "category": "c", "truth": "private", "messages": [
+        {"role": "user", "content": "Our private merger plan."}, {"role": "user", "content": "Second private line here."}]}
+    b = {"id": "b", "category": "c", "truth": "public", "messages": [
+        {"role": "user", "content": "Read Our private merger plan. carefully."}]}
+    res = _run("substring", tmp_path, [a, b])
+    assert res["valid"] and res["leaks"] == 0
