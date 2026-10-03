@@ -1,6 +1,6 @@
 # leakbench results, 2026-10-03
 
-Every result here was produced by commit `702d7cb`; `bench/run-info-*.txt` records the commit of each run.
+Every result here was produced by commit `2947176`; `bench/run-info-*.txt` records the commit of each run.
 
 29 cases: 24 private, 5 public. Every result is measured at the recording sinks.
 
@@ -52,6 +52,8 @@ In balanced mode, unlabelled work may go to the cloud when no detector fires and
 - **Unlabelled public prompts.** In every run, the classifier cleared all 3 for the cloud.
 - **Run-to-run variation.** In some runs one public question stayed local, and which one varied. An example is a public-source request with no substance: "Explain what this README section means for a new user". The classifier may tighten any request, even one with public provenance, so a flip like this costs a cloud trip and never causes a leak.
 - **Latency.** Every unlabelled request waits for the classifier. The first run averaged about 9.5 seconds per request on that machine.
+
+**The marker can sway a classifier.** leakbench tags each case with a unique marker. When that marker was a random 27-letter token placed first in the case, the local classifier called one public question private in 2 of 3 runs (3 of 3 public without it), so balanced mode briefly showed 1 of 5 and 1 of 8 public cases kept local. Markers are now eight plain words; the same question was public 5 of 5, and the numbers above are with them. A benchmark that tags its inputs should check that the tag changes no verdict.
 
 ## The harder suite
 
