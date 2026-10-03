@@ -8,6 +8,7 @@ arguments and tool results. Text is normalised first so a secret split by zero-w
 from __future__ import annotations
 
 import base64
+import functools
 import json
 import math
 import re
@@ -52,7 +53,23 @@ def _table() -> dict[int, str | None]:
     return _TABLE
 
 
+@functools.cache
+def _nonstarter_run() -> re.Pattern:
+    """30 characters in a row with a nonzero canonical combining class (accents and other marks), built once."""
+    cps = [cp for cp in range(0x110000) if unicodedata.combining(chr(cp))]
+    ranges, start = [], cps[0]
+    for prev, cp in zip(cps, cps[1:] + [None], strict=True):
+        if cp != prev + 1 if cp is not None else True:
+            ranges.append(f"{re.escape(chr(start))}-{re.escape(chr(prev))}" if prev > start else re.escape(chr(start)))
+            start = cp
+    return re.compile(f"[{''.join(ranges)}]{{30}}")
+
+
 def normalise(text: str) -> str:
+    # Normalisation sorts each run of combining marks, which takes time quadratic in the run's length. As in
+    # Unicode's stream-safe text format (UAX #15), a combining grapheme joiner after every 30 marks bounds each run;
+    # it is a default-ignorable character, so the table below removes it again. No real text stacks 30 marks.
+    text = _nonstarter_run().sub(lambda m: m.group(0) + "\u034f", text)
     return unicodedata.normalize("NFKC", text).translate(_table())
 
 

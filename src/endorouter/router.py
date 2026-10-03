@@ -88,7 +88,8 @@ class Router:
         sent: list[str] | None = None,
     ) -> tuple[Decision, list[Finding]]:
         """The decision for a request. The local classifier, when enabled, receives the text here; its name is added
-        to sent first, so an audit failure after that is never reported as "nothing was sent"."""
+        to sent just before the text leaves, so an audit failure after that is never reported as "nothing was sent",
+        and a classifier that never received it is never reported as a recipient."""
         # scanning is CPU work; in a thread, a large request cannot stall every other request in flight
         findings = await asyncio.to_thread(scan_request, body, [(f"sources[{i}]", s) for i, s in enumerate(sources)])
         verdict = None
@@ -99,10 +100,11 @@ class Router:
             if ct is not None and (not (ct.verify_program or ct.ollama_api)
                                    or await self._still_verified(ct, request_id or "")):
                 self.audit.write({"event": "classifier_dispatch", "request_id": request_id, "target": ct.name})
-                if sent is not None:
-                    sent.append(ct.name)
-                verdict = await classify(self.cfg, body, self.client, on_failure=lambda kind: self.audit.write(
-                    {"event": "classifier_failed", "request_id": request_id, "kind": kind}))
+                verdict = await classify(
+                    self.cfg, body, self.client,
+                    on_failure=lambda kind: self.audit.write(
+                        {"event": "classifier_failed", "request_id": request_id, "kind": kind}),
+                    on_send=None if sent is None else lambda: sent.append(ct.name))
         d = decide(
             self.cfg,
             requested_model=body.get("model"),
@@ -123,6 +125,7 @@ class Router:
         capability: str | None = None,
         peer: str | None = None,
         trusted: bool | None = None,
+        supplied: Label | None = None,
     ) -> Routed:
         """Route one chat request. Raises InvalidRequest, AuditError (nothing was sent), Refused, UpstreamFailed, or
         SentUnrecorded (sent, but not recorded). peer and trusted say who supplied any label, for the audit log."""
@@ -138,6 +141,7 @@ class Router:
         if problem:  # the same refusal a library caller gets as an HTTP caller
             raise InvalidRequest(problem)
         sources = tuple(str(s) for s in sources)
+        given = supplied if supplied is not None else declared  # Label.PUBLIC is 0: never test labels for truth
         sent: list[str] = []  # every target that may hold the prompt, the local classifier included
         try:
             decision, _ = await self.plan(body, sources=sources, declared=declared, capability=capability,
@@ -145,7 +149,10 @@ class Router:
             # flushed before any target is sent the request; an AuditError here, with nothing sent, is a refusal
             self.audit.write({"event": "decision", "request_id": request_id, "mode": self.cfg.mode,
                               "policy_version": POLICY_VERSION, "peer": peer, "trusted": trusted,
-                              "declared": declared.name.lower() if declared is not None else None,
+                              # what the caller sent, and whether policy used it: an untrusted caller's "public" is
+                              # recorded, never applied
+                              "declared": None if given is None else given.name.lower(),
+                              "declared_applied": declared is not None,
                               "sources": len(sources), **decision.as_record()})
             if decision.selected is None:
                 raise Refused(decision, request_id)

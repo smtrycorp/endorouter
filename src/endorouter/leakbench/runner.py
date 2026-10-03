@@ -80,13 +80,18 @@ def _marked(case: dict, model: str | None = None) -> tuple[dict, str]:
     # letters only, so the marker itself never looks like a secret to any detector (a random hex marker did)
     marker = "lbk" + "".join(secrets.choice("abcdefghijklmnopqrstuvwxyz") for _ in range(24))
     msgs = json.loads(json.dumps(case["messages"]))
-    # One marker, at the very end of the last text, so it never sits between two messages a detector reads as one
-    # (a key split across messages must stay joinable). Parts of a conversation sent without it are found by their
-    # content instead: see _fingerprints.
-    for m in reversed(msgs):
-        if isinstance(m.get("content"), str):
-            m["content"] = f"{m['content']}\n[{marker}]"
-            break
+    # One marker, after everything the case says, so it never sits between two pieces a detector reads as one (a key
+    # split across messages must stay joinable). It goes at the end of the last message's text, or, when that
+    # message has none (a tool call), in a message of its own. Parts sent without it are found by their content.
+    last = msgs[-1] if msgs else {}
+    parts = [p for p in last.get("content") or [] if isinstance(p, dict) and isinstance(p.get("text"), str)] \
+        if isinstance(last.get("content"), list) else []
+    if isinstance(last.get("content"), str):
+        last["content"] = f"{last['content']}\n[{marker}]"
+    elif parts:
+        parts[-1]["text"] = f"{parts[-1]['text']}\n[{marker}]"
+    else:
+        msgs.append({"role": "user", "content": f"[{marker}]"})
     # every request field a case carries is kept (stop, response_format, tools, ...); only benchmark metadata is not sent
     fields = {k: json.loads(json.dumps(v)) for k, v in case.items() if k not in CASE_METADATA}
     return {**fields, "model": model or case.get("model", "auto"), "messages": msgs}, marker
@@ -99,46 +104,64 @@ CALIBRATION = {"id": "calibration", "category": "calibration", "truth": "public"
 FINGERPRINT_MIN = 12  # shorter strings ("hello", "auto") are too common to say which case they came from
 
 
-def _strings(value) -> list[str]:
-    """Every string in a JSON value, keys included. Iterative, so nesting depth cannot crash it."""
-    out, stack = [], [value]
+def _content(body: dict) -> list[str]:
+    """The strings a case says, where a secret can sit: message text and text parts, tool-call arguments, tool
+    results. Not roles, types, ids or keys, which every case shares and which would name every case at once."""
+    out = []
+    for m in body.get("messages") or []:
+        if not isinstance(m, dict):
+            continue
+        c = m.get("content")
+        if isinstance(c, str):
+            out.append(c)
+        elif isinstance(c, list):
+            out += [p["text"] for p in c if isinstance(p, dict) and isinstance(p.get("text"), str)]
+        for call in m.get("tool_calls") or []:
+            args = (call.get("function") or {}).get("arguments") if isinstance(call, dict) else None
+            if isinstance(args, str):
+                out.append(args)
+    return out
+
+
+def _case_strings(bodies: dict[str, dict], markers: set[str]) -> dict[str, set[str]]:
+    """Per case, every content string it sent, marker removed; empty strings say nothing and are dropped."""
+    return {cid: {s for s in (_unmarked(x, markers) for x in _content(body)) if s.strip()}
+            for cid, body in bodies.items()}
+
+
+def _unmarked(s: str, markers: set[str]) -> str:
+    if "[lbk" in s:
+        for m in markers:
+            s = s.replace(f"\n[{m}]", "").replace(f"[{m}]", "")
+    return s
+
+
+def _fingerprints(strings: dict[str, set[str]]) -> dict[str, set[str]]:
+    """Per case, the strings that name it when found inside a longer text: long enough to be specific, and neither
+    equal to nor contained in anything another case sent (so a shared or overlapping system prompt names no one)."""
+    prints = {}
+    for cid, mine in strings.items():
+        others = [s for other, ss in strings.items() if other != cid for s in ss]
+        prints[cid] = {s for s in mine if len(s) >= FINGERPRINT_MIN and not any(s in o for o in others)}
+    return prints
+
+
+def _received(raw: str) -> list[str]:
+    """What a sink was sent, as decoded strings: every string value in its JSON, so escaping cannot hide one."""
+    try:
+        body = json.loads(raw)
+    except (ValueError, RecursionError):
+        return [raw]
+    out, stack = [], [body]
     while stack:
         v = stack.pop()
         if isinstance(v, str):
             out.append(v)
         elif isinstance(v, dict):
-            stack.extend(v.keys())
             stack.extend(v.values())
         elif isinstance(v, list):
             stack.extend(v)
     return out
-
-
-def _fingerprints(bodies: dict[str, dict], markers: set[str]) -> dict[str, set[str]]:
-    """Per case, the strings only that case sent: message text, tool-call arguments, tool definitions. A strip of
-    the marker first, and any string another case also sent is dropped, so a shared system prompt names no one."""
-    raw = {}
-    for cid, body in bodies.items():
-        found = set()
-        for s in _strings({k: v for k, v in body.items() if k != "model"}):
-            for m in markers:
-                s = s.replace(f"\n[{m}]", "")
-            if len(s) >= FINGERPRINT_MIN:
-                found.add(s)
-        raw[cid] = found
-    counts: dict[str, int] = defaultdict(int)
-    for found in raw.values():
-        for s in found:
-            counts[s] += 1
-    return {cid: {s for s in found if counts[s] == 1} for cid, found in raw.items()}
-
-
-def _received(raw: str) -> str:
-    """What a sink was sent, as decoded text: every string in its JSON, so escaping cannot hide a fingerprint."""
-    try:
-        return "\n".join(_strings(json.loads(raw)))
-    except (ValueError, RecursionError):
-        return raw
 
 
 def _answered_by(text: str) -> str:
@@ -195,14 +218,29 @@ async def run(base_url: str, cases_path: str | None = None, *, sink_port: int = 
     # A request belongs to every case whose marker it carries, and to every case whose own content it carries (so a
     # part of a conversation sent without the marker, such as a tool call, is still credited to its case). Only a
     # request with neither falls back to the case in flight, so a late send of one case is never credited to the next.
+    # Then every exact string in the request that belongs to other cases, and is not explained by a case already
+    # credited, is credited to all of its owners: an honest gateway sends one case's content only while that case
+    # is in flight, so a string of another case's (however short, however shared) is a leak of that case's.
     markers = {r["marker"]: r["id"] for r in rows}
-    prints = _fingerprints(sent_bodies, set(markers))
+    strings = _case_strings(sent_bodies, set(markers))
+    prints = _fingerprints(strings)
+    owner_of: dict[str, set[str]] = defaultdict(set)
+    for cid, ss in strings.items():
+        for s in ss:
+            owner_of[s].add(cid)
 
     def owners(case: str | None, raw: str) -> set[str]:
-        text = _received(raw)
+        got = _received(raw)
+        text = "\n".join(got)
         found = {cid for m, cid in markers.items() if m in text}
         found |= {cid for cid, ss in prints.items() if any(s in text for s in ss)}
-        return found or ({case} if case else set())
+        if not found and case:
+            found = {case}
+        for s in got:
+            who = owner_of.get(_unmarked(s, set(markers)))
+            if who and not (who & found):
+                found |= who
+        return found
 
     cloud_ids = [owners(c, raw) for c, raw in cloud_seen]
     local_ids = [owners(c, raw) for c, raw in local_seen]

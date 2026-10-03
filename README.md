@@ -2,7 +2,7 @@
 
 A model router that decides **where a prompt is allowed to go** before it decides which model is best.
 
-Most routers send everything to the cloud and try to catch the sensitive requests on the way out. That fails open: anything the detectors do not recognise, such as a strategy memo, a patient note, or proprietary code, leaves the building. EndoRouter fails closed. Work stays on your local model unless its provenance says it is public, and every decision is written to an audit log before a single byte is sent.
+Most routers send everything to the cloud and try to catch the sensitive requests on the way out. That fails open: anything the detectors do not recognise, such as a strategy memo, a patient note, or proprietary code, leaves the building. EndoRouter fails closed. By default, work stays on your local model unless its provenance says it is public; an optional balanced mode also lets a local classifier clear unlabelled work. Every send, to a cloud model or to that local classifier, is written to an audit log before a byte of it leaves.
 
 ```
 client ──▶ endorouter ──▶ scan ─▶ label ─▶ decide ─▶ audit ─▶ dispatch
@@ -11,7 +11,7 @@ client ──▶ endorouter ──▶ scan ─▶ label ─▶ decide ─▶ aud
                              public (by provenance) ─────────────▶ local or cloud, by preference
 ```
 
-It speaks the OpenAI chat completions API for text chat, so a client that lets you set a base URL can use it. To send anything to the cloud, the client must also label work as public, per request, with the headers described below. A client that cannot send headers still works: in strict mode everything it sends stays local, and in balanced mode the local classifier decides.
+It speaks the OpenAI chat completions API for text chat, so a client that lets you set a base URL can use it. In the default strict mode, sending anything to the cloud takes a public label from the client, per request, with the headers described below. A client that cannot send headers still works: in strict mode everything it sends stays local, and in balanced mode the local classifier decides.
 
 ## Quickstart
 
@@ -89,7 +89,7 @@ These are enforced in code and pinned by tests.
 - If the local model is down, a private or unknown request fails. It never falls back to the cloud. A public request may fall back to any permitted target.
 - Fallback only moves between targets that were already permitted.
 - Every send is preceded by a flushed audit record naming where it goes: a `classifier_dispatch` record before the local classifier reads the text, and an `attempt` record, after the `decision` record, before each target. If a record cannot be written before the first send, nothing is sent. Once anything has been sent, to the classifier or to a target, an audit failure is reported as 502 "sent, but not recorded", naming every recipient, and the response is discarded. Records are file-locked, so separate processes never interleave them.
-- The decision record names the caller's address, whether it was trusted, and the label it declared, which the router never rewrites: a source that makes a request private appears as its own reason. Every process on this machine shares 127.0.0.1, so the address says which trusted client sent a public label only when you trust a single one. A classifier that fails is recorded as `classifier_failed` with the kind of failure.
+- The decision record names the caller's address, whether it was trusted, and the label it declared, which the record never rewrites: `declared_applied` says whether policy used it (an untrusted caller's "public" is recorded but not applied), and a source that makes a request private appears as its own reason. Every process on this machine shares 127.0.0.1, so the address says which trusted client sent a public label only when you trust a single one. A classifier that fails is recorded as `classifier_failed` with the kind of failure.
 - The audit log holds decisions and reasons, never prompt content.
 - The HTTP client follows no redirects and ignores proxy environment variables. As a library, the router refuses an injected client that trusts the environment. It converts each request to plain JSON once, then validates, scans and sends exactly that, so a tuple or a numeric key cannot be scanned in one shape and sent in another.
 - It listens on loopback only. On every route it answers only requests addressed to `localhost`, `127.0.0.1` or `[::1]` and carrying no browser `Origin` header, and chat requests must be sent as `application/json`. A web page therefore cannot reach it, by DNS rebinding or by a cross-site form or fetch.
@@ -107,7 +107,7 @@ A router can only enforce what it is told, so this section matters more than the
 
 ## leakbench
 
-leakbench measures whether private data reaches a cloud through any OpenAI-compatible gateway, not just this one. It starts two recording fake servers, one standing in for the cloud and one for the local model. It sends cases through the gateway one at a time. Each case carries a unique marker at the end of its last message, and every string it sends that no other case sends (message text, tool-call arguments, tool definitions) is its fingerprint. A request a sink receives is credited to every case whose marker or fingerprint it contains, so a gateway that forwards only part of a conversation, a tool call for example, is still caught; a request with neither is credited to the case in flight. The sinks keep listening one second after the last case. The result is measured at the sink, never taken from the gateway's own report.
+leakbench measures whether private data reaches a cloud through any OpenAI-compatible gateway, not just this one. It starts two recording fake servers, one standing in for the cloud and one for the local model. It sends cases through the gateway one at a time. Each case carries a unique marker after everything it says, and the strings it alone sends (longer than a few words and not contained in another case's text) are its fingerprint. A request a sink receives is credited to every case whose marker or fingerprint it contains, or else to the case in flight. Then any content string in it that belongs to another case, however short or shared, is credited to that string's owners too: an honest gateway sends a case's content only while that case runs. So a gateway that forwards part of a conversation, a tool call or one short message, is still caught. The sinks keep listening one second after the last case. The result is measured at the sink, never taken from the gateway's own report.
 
 ```
 endorouter leakbench --base-url http://127.0.0.1:8787/v1

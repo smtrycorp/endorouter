@@ -14,7 +14,7 @@ from endorouter.audit import AuditError
 from endorouter.classifier import classify
 from endorouter.config import parse_config
 from endorouter.detectors import scan_request, scan_text
-from endorouter.leakbench.runner import _fingerprints, _marked, _received
+from endorouter.leakbench.runner import _case_strings, _fingerprints, _marked, _received
 from endorouter.router import Router
 from endorouter.server import create_app
 from tests.test_review_1 import _balanced
@@ -122,14 +122,58 @@ def test_a_tool_call_sent_without_its_marker_is_traced_to_its_case():
         {"id": "c1", "type": "function", "function": {"name": "push", "arguments": "{\"key\": \"AKIAIOSFODNN7EXAMPLE\"}"}}]},
         {"role": "tool", "tool_call_id": "c1", "content": "pushed"}, {"role": "user", "content": "done?\n[lbkA]"}]}
     b = {"messages": [{"role": "user", "content": "What is the tallest mountain on Earth?\n[lbkB]"}]}
-    prints = _fingerprints({"A": a, "B": b}, {"lbkA", "lbkB"})
+    prints = _fingerprints(_case_strings({"A": a, "B": b}, {"lbkA", "lbkB"}))
     leaked = json.dumps({"messages": [a["messages"][1], b["messages"][0]]})
-    text = _received(leaked)
+    text = "\n".join(_received(leaked))
     assert any(s in text for s in prints["A"]) and any(s in text for s in prints["B"])
 
 
 def test_a_string_two_cases_share_names_neither():
     shared = "You are a helpful assistant."
-    prints = _fingerprints({"A": {"messages": [{"role": "system", "content": shared}]},
-                            "B": {"messages": [{"role": "system", "content": shared}]}}, set())
+    prints = _fingerprints(_case_strings({"A": {"messages": [{"role": "system", "content": shared}]},
+                                          "B": {"messages": [{"role": "system", "content": shared}]}}, set()))
     assert shared not in prints["A"] | prints["B"]
+
+
+def test_every_label_is_true():
+    from endorouter.labels import Label
+
+    assert all(bool(lab) for lab in Label) and (Label.PUBLIC or None) is Label.PUBLIC
+
+
+def test_an_untrusted_declaration_is_recorded_but_not_applied(tmp_path):
+    cfg = parse_config({"version": 1, "audit_log": str(tmp_path / "a.jsonl"), "targets": {
+        "l": {"url": "http://local.test/v1", "model": "m", "location": "local"},
+        "c": {"url": "https://cloud.test/v1", "model": "m", "location": "cloud"}},
+        "provenance": {"private_sources": ["clients/**"], "trusted_clients": []}})
+    _app(cfg, []).post("/v1/chat/completions", json=BODY,
+                       headers={"x-endorouter-label": "public", "x-endorouter-source": "clients/acme/brief.md"})
+    rec = next(json.loads(line) for line in open(cfg.audit_log) if '"decision"' in line)
+    assert rec["trusted"] is False and rec["declared"] == "public" and rec["declared_applied"] is False
+    assert rec["label"] == "private"
+
+
+def test_a_classifier_that_never_read_the_text_is_not_reported_as_a_recipient(tmp_path, monkeypatch):
+    cfg = _balanced(tmp_path)
+    posts = []
+    router = Router(cfg, client=httpx.AsyncClient(transport=httpx.MockTransport(
+        lambda r: posts.append(r) or httpx.Response(200, json={"choices": []})), trust_env=False))
+    real = router.audit.write
+    monkeypatch.setattr(router.audit, "write", lambda rec: (_ for _ in ()).throw(AuditError("full"))
+                        if rec.get("event") == "decision" else real(rec))
+    long = {"model": "auto", "messages": [{"role": "user", "content": "x" * 12001}]}
+    r = TestClient(create_app(cfg, router), base_url="http://127.0.0.1").post("/v1/chat/completions", json=long)
+    assert posts == [] and r.status_code == 503
+
+
+
+@pytest.mark.parametrize("last", [
+    {"role": "user", "content": [{"type": "text", "text": "IAIOSFODNN7EXAMPLE"}]},
+    {"role": "assistant", "content": None, "tool_calls": [
+        {"id": "c1", "type": "function", "function": {"name": "f", "arguments": "IAIOSFODNN7EXAMPLE"}}]},
+])
+def test_the_marker_never_splits_a_key_whatever_the_last_message_is(last):
+    case = {"id": "s", "category": "c", "truth": "private", "messages": [{"role": "user", "content": "AK"}, last]}
+    assert scan_request({"messages": case["messages"]})
+    body, marker = _marked(case)
+    assert scan_request(body) and marker in json.dumps(body["messages"][-1])

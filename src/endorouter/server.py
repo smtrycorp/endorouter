@@ -89,6 +89,7 @@ def create_app(cfg: Config, router: Router | None = None) -> Starlette:
             label = Label.parse_all(request.headers.getlist("x-endorouter-label"))
         except ValueError as e:
             return _error(400, f"x-endorouter-label: {e}")
+        supplied = label
         if not trusted and label is not Label.PRIVATE:
             label = None  # an untrusted caller cannot declare anything public
         # One source per header value, since paths and URLs can contain commas. Header bytes are read as UTF-8:
@@ -114,7 +115,7 @@ def create_app(cfg: Config, router: Router | None = None) -> Starlette:
         capability = caps[0].strip() if caps and caps[0].strip() else None
         try:
             routed = await r.route(body, sources=raw_sources, declared=label, capability=capability, peer=peer,
-                                   trusted=trusted)
+                                   trusted=trusted, supplied=supplied)
         except InvalidRequest as e:
             return _error(400, str(e))
         except AuditError as e:

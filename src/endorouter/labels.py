@@ -10,6 +10,11 @@ class Label(IntEnum):
     UNKNOWN = 1  # nobody said; treated as private in strict mode
     PRIVATE = 2  # must stay on a local target
 
+    def __bool__(self) -> bool:
+        # Every label is a value. As an int, PUBLIC would be 0 and false, so "if label" or "a or b" would read a
+        # public label as no label at all; that dropped "public" from the audit record twice.
+        return True
+
     @classmethod
     def combine(cls, *labels: "Label") -> "Label":
         return max(labels, default=cls.UNKNOWN)

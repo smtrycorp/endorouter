@@ -30,9 +30,11 @@ MAX_CHARS = 12000
 
 
 async def classify(cfg: Config, body: dict, client: httpx.AsyncClient,
-                   on_failure: Callable[[str], None] | None = None) -> Label | None:
+                   on_failure: Callable[[str], None] | None = None,
+                   on_send: Callable[[], None] | None = None) -> Label | None:
     """PRIVATE, PUBLIC, or None. on_failure receives the kind of failure (never the text), so a broken classifier is
-    visible in the audit log instead of quietly turning balanced mode into strict."""
+    visible in the audit log instead of quietly turning balanced mode into strict. on_send is called just before the
+    text leaves for the classifier, and only then, so a caller knows whether it was sent at all."""
     def failed(kind: str) -> None:
         if on_failure is not None:
             on_failure(kind)
@@ -47,6 +49,8 @@ async def classify(cfg: Config, body: dict, client: httpx.AsyncClient,
         # never clear text the classifier did not read: a long request gets no verdict (strict treatment)
         failed("too_long")
         return None
+    if on_send is not None:
+        on_send()
     try:
         r = await client.post(
             f"{t.url}/chat/completions",
