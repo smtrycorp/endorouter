@@ -1,4 +1,4 @@
-"""sovereign-router: decide where a prompt may go before deciding which model is best."""
+"""endorouter: decide where a prompt may go before deciding which model is best."""
 
 from .config import Config, ConfigError, Target, load_config
 from .labels import Label

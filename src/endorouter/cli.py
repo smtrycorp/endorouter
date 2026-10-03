@@ -16,7 +16,7 @@ from .labels import Label
 from .policy import decide
 
 LOOPBACK = {"127.0.0.1", "localhost", "::1"}
-DEFAULT_CONFIG = "sovereign-router.yaml"
+DEFAULT_CONFIG = "endorouter.yaml"
 
 
 def _cfg(path: str):
@@ -98,7 +98,7 @@ def _reverify(cfg) -> list[str]:
     for t in cfg.targets:
         if t.is_local and t.verify_program and verified_program(t.url) != t.verify_program:
             problems.append(f"{t.name}: {t.url} is no longer served by {t.verify_program}; refusing to use it "
-                            f"(run `sovereign-router init --force` to re-detect)")
+                            f"(run `endorouter init --force` to re-detect)")
     return problems
 
 
@@ -110,7 +110,7 @@ def cmd_init(a) -> int:
     raw, notes, _ = _auto(tuple(a.trust))
     for n in notes:
         print(n)
-    Path(a.config).write_text("# written by `sovereign-router init`: everything below was found, not asked for\n"
+    Path(a.config).write_text("# written by `endorouter init`: everything below was found, not asked for\n"
                               + yaml.safe_dump(raw, sort_keys=False))
     print(f"wrote {a.config}; strict mode: nothing leaves this machine unless a trusted client labels it public")
     return 0
@@ -152,7 +152,7 @@ def cmd_leakbench(a) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
-    ap = argparse.ArgumentParser(prog="sovereign-router", description=__doc__)
+    ap = argparse.ArgumentParser(prog="endorouter", description=__doc__)
     sub = ap.add_subparsers(dest="cmd", required=True)
     for name in ("init", "doctor", "explain", "serve"):
         p = sub.add_parser(name)

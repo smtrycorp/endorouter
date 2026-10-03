@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from sovereign_router.detectors import scan_text
+from endorouter.detectors import scan_text
 
 
 def rules(t):
@@ -29,7 +29,7 @@ def test_unknown_vendor_keys_are_found(text):
     "id 1234abcd-12ab-34cd-56ef-1234567890ab",                           # UUID
     "class TwelveLabsMarengo3AudioRequest(BaseModel):",                 # identifier
     "pi = 3.14159265358979311599796346854418516159",                    # number
-    "see src/sovereign_router/leakbench/runner.py",                     # path
+    "see src/endorouter/leakbench/runner.py",                     # path
     "model Qwen3-235B-A22B-Instruct-2507 is large",                     # model name
 ])
 def test_ordinary_technical_text_is_left_alone(text):

@@ -2,8 +2,8 @@
 # The harder suite (cases-hard.jsonl) against strict, balanced and LiteLLM. Same prerequisites as run_all.sh.
 set -u
 cd "$(dirname "$0")/.."
-SR=.venv/bin/sovereign-router
-CASES=src/sovereign_router/leakbench/cases-hard.jsonl
+SR=.venv/bin/endorouter
+CASES=src/endorouter/leakbench/cases-hard.jsonl
 # a previous run's servers may still be shutting down: wait until every port this script uses is free
 for port in 8795 8796 8797 8798 8799 8800 8801; do
   for i in $(seq 1 60); do lsof -iTCP:$port -sTCP:LISTEN >/dev/null 2>&1 || break; sleep 1; done

@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import pytest
 
-from sovereign_router.classifier import PROMPT
-from sovereign_router.detectors import scan_request, scan_text
+from endorouter.classifier import PROMPT
+from endorouter.detectors import scan_request, scan_text
 from tests.test_qc1 import client_for
 from tests.test_router import Upstream
 

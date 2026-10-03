@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import pytest
 
-from sovereign_router import ConfigError, Label, decide
-from sovereign_router.config import parse_config
-from sovereign_router.detectors import scan_request, scan_text
+from endorouter import ConfigError, Label, decide
+from endorouter.config import parse_config
+from endorouter.detectors import scan_request, scan_text
 
 
 def cfg(mode="strict", classifier=False, **prov):

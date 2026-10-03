@@ -1,7 +1,7 @@
-# sovereign-router example config. Every field is checked; a typo is an error, never a silent default.
+# endorouter example config. Every field is checked; a typo is an error, never a silent default.
 version: 1
 mode: strict          # strict: unlabelled work stays local. balanced: the local classifier may clear it (logged as such).
-audit_log: sovereign-router.log.jsonl
+audit_log: endorouter.log.jsonl
 
 targets:              # in preference order
   local:

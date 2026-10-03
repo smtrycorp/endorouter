@@ -8,10 +8,10 @@ import httpx
 import pytest
 from starlette.testclient import TestClient
 
-from sovereign_router.audit import AuditLog
-from sovereign_router.config import parse_config
-from sovereign_router.router import Router
-from sovereign_router.server import create_app
+from endorouter.audit import AuditLog
+from endorouter.config import parse_config
+from endorouter.router import Router
+from endorouter.server import create_app
 
 
 def make_cfg(tmp_path, extra_local=False):

@@ -8,12 +8,12 @@ import json
 import httpx
 import pytest
 
-from sovereign_router import Label, decide
-from sovereign_router import discover
-from sovereign_router.config import parse_config
-from sovereign_router.detectors import scan_request, scan_text
-from sovereign_router.router import Router
-from sovereign_router.validate import InvalidRequest
+from endorouter import Label, decide
+from endorouter import discover
+from endorouter.config import parse_config
+from endorouter.detectors import scan_request, scan_text
+from endorouter.router import Router
+from endorouter.validate import InvalidRequest
 from tests.test_qc1 import client_for, make_cfg_url
 from tests.test_router import Upstream, make_cfg
 
@@ -111,7 +111,7 @@ def _passthrough(tmp_path):
 def test_secret_in_a_pass_through_model_name_is_found_and_not_audited(tmp_path):
     from starlette.testclient import TestClient
 
-    from sovereign_router.server import create_app
+    from endorouter.server import create_app
 
     up = Upstream()
     cfg = _passthrough(tmp_path)
@@ -149,7 +149,7 @@ def test_router_route_refuses_non_text_content(tmp_path):
 
 # new 7: leakbench keeps every request field a case carries
 def test_leakbench_keeps_case_request_fields():
-    from sovereign_router.leakbench.runner import _marked
+    from endorouter.leakbench.runner import _marked
 
     body, _ = _marked({"id": "x", "category": "c", "truth": "private", "stop": AWS,
                        "messages": [{"role": "user", "content": "hi"}]})
@@ -176,7 +176,7 @@ def test_discovery_matches_programs_exactly(cmd, expected):
 
 
 def test_classifier_prompt_fences_the_text_with_a_fresh_boundary(tmp_path):
-    from sovereign_router.classifier import classify
+    from endorouter.classifier import classify
     from tests.test_qc1 import _balanced
 
     seen = []
@@ -258,7 +258,7 @@ def test_spaced_jwt_with_dots_is_found():
 
 
 def test_a_verified_target_is_refused_when_its_port_changes_hands(monkeypatch, tmp_path):
-    from sovereign_router import cli
+    from endorouter import cli
 
     cfg = parse_config({"version": 1, "audit_log": str(tmp_path / "a.jsonl"), "targets": {
         "ollama": {"url": "http://127.0.0.1:11434/v1", "model": "llama3.2", "location": "local", "verify_program": "ollama"}}})
@@ -271,7 +271,7 @@ def test_a_verified_target_is_refused_when_its_port_changes_hands(monkeypatch, t
 def test_models_list_shows_pass_through_targets_with_their_request_form(tmp_path):
     from starlette.testclient import TestClient
 
-    from sovereign_router.server import create_app
+    from endorouter.server import create_app
 
     cfg = _passthrough(tmp_path)
     ids = [m["id"] for m in TestClient(create_app(cfg)).get("/v1/models").json()["data"]]
@@ -378,7 +378,7 @@ def test_keys_containing_slashes_are_scored(text):
 
 
 def test_ordinary_paths_and_urls_are_still_left_alone():
-    for t in ["see src/sovereign_router/leakbench/runner.py", "docs at https://docs.python.org/3/library/re.html"]:
+    for t in ["see src/endorouter/leakbench/runner.py", "docs at https://docs.python.org/3/library/re.html"]:
         assert "secret_shape" not in {f.rule for f in scan_text(t, "x")}
 
 
@@ -397,8 +397,8 @@ def test_app_bundle_is_judged_from_the_executable_only(cmd, expected):
 
 
 def test_duplicate_config_keys_and_null_audit_log_are_errors(tmp_path):
-    from sovereign_router import ConfigError
-    from sovereign_router.config import load_config
+    from endorouter import ConfigError
+    from endorouter.config import load_config
 
     f = tmp_path / "c.yaml"
     f.write_text("version: 1\nmode: strict\nmode: balanced\ntargets:\n  l: {url: 'http://127.0.0.1/v1', model: m, location: local}\n")

@@ -28,7 +28,7 @@ from .validate import InvalidRequest, validate as _validate
 
 
 def _error(status: int, message: str, **extra) -> JSONResponse:
-    return JSONResponse({"error": {"message": message, "type": "sovereign_router", **extra}}, status_code=status)
+    return JSONResponse({"error": {"message": message, "type": "endorouter", **extra}}, status_code=status)
 
 def create_app(cfg: Config, router: Router | None = None) -> Starlette:
     r = router or Router(cfg)
@@ -89,7 +89,7 @@ def create_app(cfg: Config, router: Router | None = None) -> Starlette:
         return Response(content, status_code=up.status_code, headers=headers)
 
     async def models(_request: Request):
-        data = [{"id": "auto", "object": "model", "owned_by": "sovereign-router"}]
+        data = [{"id": "auto", "object": "model", "owned_by": "endorouter"}]
         # a pass-through target is requested as "<name>/<model>", so it is listed that way, never as a bare name
         data += [{"id": f"{t.name}/*" if t.model == "*" else t.name, "object": "model", "owned_by": t.location}
                  for t in cfg.targets]

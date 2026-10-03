@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# Re-run every leakbench configuration in bench/RESULTS.md. Needs: .venv with sovereign-router, bench/.litellm-venv
+# Re-run every leakbench configuration in bench/RESULTS.md. Needs: .venv with endorouter, bench/.litellm-venv
 # with litellm 1.103.1, and (for balanced) a local completion route for bench/local_shim.py (SHIM_UPSTREAM, SHIM_KEY).
 set -u
 cd "$(dirname "$0")/.."
-SR=.venv/bin/sovereign-router
+SR=.venv/bin/endorouter
 # a previous run's servers may still be shutting down: wait until every port this script uses is free
 for port in 8795 8796 8797 8798 8799 8800 8801; do
   for i in $(seq 1 60); do lsof -iTCP:$port -sTCP:LISTEN >/dev/null 2>&1 || break; sleep 1; done

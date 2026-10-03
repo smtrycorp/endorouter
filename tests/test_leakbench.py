@@ -11,7 +11,7 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 from starlette.routing import Route
 
-from sovereign_router.leakbench.runner import run
+from endorouter.leakbench.runner import run
 
 SINK = 18799
 GATEWAY = 18797

@@ -28,7 +28,7 @@ def validate(body) -> str | None:
         return "request body must be a JSON object"
     extra = set(body) - SUPPORTED_FIELDS
     if extra:
-        return f"unsupported field(s) {sorted(extra)} (sovereign-router v0.1 supports text chat completions)"
+        return f"unsupported field(s) {sorted(extra)} (endorouter v0.1 supports text chat completions)"
     if not isinstance(body.get("model", "auto"), str):
         return "model must be a string"
     msgs = body.get("messages")

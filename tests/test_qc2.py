@@ -9,13 +9,13 @@ import httpx
 import pytest
 from starlette.testclient import TestClient
 
-from sovereign_router import Label, decide
-from sovereign_router.audit import AuditLog
-from sovereign_router.classifier import classify
-from sovereign_router.config import parse_config
-from sovereign_router.detectors import scan_request, scan_text, texts_in_request
-from sovereign_router.router import Router
-from sovereign_router.server import create_app
+from endorouter import Label, decide
+from endorouter.audit import AuditLog
+from endorouter.classifier import classify
+from endorouter.config import parse_config
+from endorouter.detectors import scan_request, scan_text, texts_in_request
+from endorouter.router import Router
+from endorouter.server import create_app
 from tests.test_qc1 import _answering, _balanced, client_for, make_cfg_url
 from tests.test_router import Upstream, make_cfg
 
@@ -133,14 +133,14 @@ def test_nested_non_text_shapes_are_rejected(tmp_path, msg):
 
 
 def test_leakbench_markers_never_contain_one_another():
-    from sovereign_router.leakbench.runner import _marked
+    from endorouter.leakbench.runner import _marked
 
     m = {_marked({"id": i, "messages": [{"role": "user", "content": "x"}]})[1] for i in ("p", "public", "p")}
     assert len(m) == 3 and not any(a != b and a in b for a in m for b in m)
 
 
 def test_leakbench_markers_never_look_like_secrets():
-    from sovereign_router.leakbench.runner import _marked
+    from endorouter.leakbench.runner import _marked
 
     for i in range(200):
         body, _ = _marked({"id": str(i), "messages": [{"role": "user", "content": "What is TCP?"}]})

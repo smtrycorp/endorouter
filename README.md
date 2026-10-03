@@ -1,11 +1,11 @@
-# sovereign-router
+# EndoRouter
 
 A model router that decides **where a prompt is allowed to go** before it decides which model is best.
 
-Most routers send everything to the cloud and try to catch the sensitive requests on the way out. That fails open: anything the detectors do not recognise, such as a strategy memo, a patient note, or proprietary code, leaves the building. sovereign-router fails closed. Work stays on your local model unless its provenance says it is public, and every decision is written to an audit log before a single byte is sent.
+Most routers send everything to the cloud and try to catch the sensitive requests on the way out. That fails open: anything the detectors do not recognise, such as a strategy memo, a patient note, or proprietary code, leaves the building. EndoRouter fails closed. Work stays on your local model unless its provenance says it is public, and every decision is written to an audit log before a single byte is sent.
 
 ```
-client ──▶ sovereign-router ──▶ scan ─▶ label ─▶ decide ─▶ audit ─▶ dispatch
+client ──▶ endorouter ──▶ scan ─▶ label ─▶ decide ─▶ audit ─▶ dispatch
                                                                │
                              private or unknown ──────────────┴──▶ local model only
                              public (by provenance) ─────────────▶ local or cloud, by preference
@@ -17,26 +17,26 @@ It speaks the OpenAI chat completions API, so any client that lets you set a bas
 
 ```
 pip install .    # from a clone; not yet on PyPI
-sovereign-router serve
+endorouter serve
 ```
 
 Then point your client at `http://127.0.0.1:8787/v1`. There are no questions and no config file. On start the router does three things:
 
-- **It finds your local model and checks that it really is local.** It looks at the ports Ollama, LM Studio, llama.cpp, vLLM and Jan use by default. A server is trusted only if the program behind the port is known to run models on this machine. It also skips any Ollama model that is hosted remotely. Anything it cannot verify, such as a gateway or proxy, is reported with the full command line of the program on that port, and not used. If you know that program runs models here, trust it yourself and name the model: `sovereign-router init --trust vllm=Qwen/Qwen3-8B`. Only a server that speaks the Ollama API can be trusted by name alone, because it reports which of its models are hosted. Verified servers are re-checked before every send, with the result cached for one second. A port served by a different program is skipped until the verified program is back on it.
+- **It finds your local model and checks that it really is local.** It looks at the ports Ollama, LM Studio, llama.cpp, vLLM and Jan use by default. A server is trusted only if the program behind the port is known to run models on this machine. It also skips any Ollama model that is hosted remotely. Anything it cannot verify, such as a gateway or proxy, is reported with the full command line of the program on that port, and not used. If you know that program runs models here, trust it yourself and name the model: `endorouter init --trust vllm=Qwen/Qwen3-8B`. Only a server that speaks the Ollama API can be trusted by name alone, because it reports which of its models are hosted. Verified servers are re-checked before every send, with the result cached for one second. A port served by a different program is skipped until the verified program is back on it.
 - **It adds cloud providers only if their key is already set.** Examples are `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, `MISTRAL_API_KEY`, `GROQ_API_KEY` and `OPENROUTER_API_KEY`. A client asks for a cloud model as `openai/gpt-5`, and gets it only for work labelled public.
 - **It protects standard secret files.** Examples are `.env`, `*.pem`, SSH keys, `.aws/credentials` and `.netrc`. It runs in strict mode, so anything unlabelled stays local.
 
 To see or change what it found, write it to a file:
 
 ```
-sovereign-router init        # writes sovereign-router.yaml; nothing is asked, everything is detected
-sovereign-router doctor
+endorouter init        # writes endorouter.yaml; nothing is asked, everything is detected
+endorouter doctor
 ```
 
 To see a decision without sending anything:
 
 ```
-sovereign-router explain --source clients/acme/brief.md < prompt.txt
+endorouter explain --source clients/acme/brief.md < prompt.txt
 ```
 
 ## How a request is labelled
@@ -84,7 +84,7 @@ These are enforced in code and pinned by tests.
 
 A router can only enforce what it is told, so this section matters more than the rest.
 
-- **Localhost is not proof of local inference.** Some local servers can proxy requests to a hosted model. Discovery trusts only known local-inference programs, and it checks Ollama models for remote hosting. A target you declare `local` yourself, in a config file or with `--trust`, is taken at your word. `sovereign-router doctor` reminds you of this for every local target.
+- **Localhost is not proof of local inference.** Some local servers can proxy requests to a hosted model. Discovery trusts only known local-inference programs, and it checks Ollama models for remote hosting. A target you declare `local` yourself, in a config file or with `--trust`, is taken at your word. `endorouter doctor` reminds you of this for every local target.
 - **Provenance is only as good as the client that sends it.** Configure `trusted_clients` narrowly. The router ignores `X-Forwarded-For`, so no caller can borrow a trusted address. Behind a reverse proxy, the proxy is the peer, so list it in `trusted_clients` only if every caller behind it is trusted.
 - **A static public label moves the decision to the model picker.** Many clients can only send fixed headers. If you set `x-sovereign-label: public` on every request, every request counts as public, and only the detectors stand between a pasted secret and the cloud model you chose. Label per request where you can, or route by source paths with `public_sources`.
 - **Detectors catch formats, not meaning.** That is why the default is local. In balanced mode, unlabelled work can reach the cloud if the local classifier calls it public, and that is a judgement call you opt into.
@@ -94,7 +94,7 @@ A router can only enforce what it is told, so this section matters more than the
 leakbench measures whether private data reaches a cloud through any OpenAI-compatible gateway, not just this one. It starts two recording fake servers, one standing in for the cloud and one for the local model. It sends marked cases through the gateway and checks which server each marker reached. The result is measured at the sink, never taken from the gateway's own report.
 
 ```
-sovereign-router leakbench --base-url http://127.0.0.1:8787/v1
+endorouter leakbench --base-url http://127.0.0.1:8787/v1
 ```
 
 Point the gateway's cloud destination at port 8799 and its local destination at 8800. A gateway that answers nothing must never score as one that leaks nothing, so three checks make a run invalid:

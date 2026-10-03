@@ -8,13 +8,13 @@ import httpx
 import pytest
 from starlette.testclient import TestClient
 
-from sovereign_router import ConfigError, Label, decide
-from sovereign_router.audit import AuditLog
-from sovereign_router.classifier import classify
-from sovereign_router.config import parse_config
-from sovereign_router.detectors import scan_request, scan_text
-from sovereign_router.router import Router
-from sovereign_router.server import create_app
+from endorouter import ConfigError, Label, decide
+from endorouter.audit import AuditLog
+from endorouter.classifier import classify
+from endorouter.config import parse_config
+from endorouter.detectors import scan_request, scan_text
+from endorouter.router import Router
+from endorouter.server import create_app
 
 from tests.test_router import Upstream, make_cfg
 
@@ -56,7 +56,7 @@ def test_repeated_source_headers_are_all_read(tmp_path):
 def test_serve_disables_proxy_headers():
     import inspect
 
-    from sovereign_router import cli
+    from endorouter import cli
 
     src = inspect.getsource(cli.cmd_serve)
     assert "proxy_headers=False" in src

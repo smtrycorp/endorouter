@@ -63,7 +63,7 @@ async def _serve(app: Starlette, port: int) -> uvicorn.Server:
 
 
 def load_cases(path: str | None) -> list[dict]:
-    text = Path(path).read_text() if path else resources.files("sovereign_router.leakbench").joinpath("cases.jsonl").read_text()
+    text = Path(path).read_text() if path else resources.files("endorouter.leakbench").joinpath("cases.jsonl").read_text()
     return [json.loads(line) for line in text.splitlines() if line.strip()]
 
 

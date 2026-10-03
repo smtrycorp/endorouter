@@ -50,7 +50,7 @@ class Classifier:
 class Config:
     targets: tuple[Target, ...]  # in preference order
     mode: str = "strict"
-    audit_log: str = "sovereign-router.log.jsonl"
+    audit_log: str = "endorouter.log.jsonl"
     provenance: Provenance = field(default_factory=Provenance)
     classifier: Classifier = field(default_factory=Classifier)
 
@@ -154,7 +154,7 @@ def parse_config(raw: dict) -> Config:
     clf = Classifier(enabled=_bool(craw.get("enabled"), "classifier.enabled", False),
                      target=_opt_str(craw.get("target"), "classifier.target"),
                      timeout_s=_seconds(craw.get("timeout_s"), "classifier.timeout_s", 30.0))
-    cfg = Config(targets=tuple(targets), mode=mode, audit_log=_opt_str(raw.get("audit_log", "sovereign-router.log.jsonl"), "audit_log") or _missing("audit_log"), provenance=prov, classifier=clf)
+    cfg = Config(targets=tuple(targets), mode=mode, audit_log=_opt_str(raw.get("audit_log", "endorouter.log.jsonl"), "audit_log") or _missing("audit_log"), provenance=prov, classifier=clf)
     if clf.enabled:
         ct = cfg.target(clf.target or "")
         if ct is None or not ct.is_local:

@@ -6,11 +6,11 @@ import httpx
 import pytest
 from starlette.testclient import TestClient
 
-from sovereign_router import Label, decide
-from sovereign_router import discover
-from sovereign_router.config import parse_config
-from sovereign_router.router import Router
-from sovereign_router.server import create_app
+from endorouter import Label, decide
+from endorouter import discover
+from endorouter.config import parse_config
+from endorouter.router import Router
+from endorouter.server import create_app
 
 
 def test_auto_config_finds_local_and_env_keys(monkeypatch, tmp_path):

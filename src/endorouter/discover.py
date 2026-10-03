@@ -38,7 +38,7 @@ SECRET_FILES = [
 
 
 def default_audit_log() -> str:
-    base = Path(os.environ.get("XDG_STATE_HOME") or Path.home() / ".local" / "state") / "sovereign-router"
+    base = Path(os.environ.get("XDG_STATE_HOME") or Path.home() / ".local" / "state") / "endorouter"
     base.mkdir(parents=True, exist_ok=True)
     return str(base / "audit.jsonl")
 
@@ -197,7 +197,7 @@ def find_local(timeout: float = 1.0) -> tuple[list[tuple[str, str, str, str | No
                     "service, is invisible to this check)")
                 notes.append(f"found a server at {url} but could not verify it runs models on this machine. It is "
                              f"served by: {shown}. Not used. Only if that program runs models here, trust it with "
-                             f"`sovereign-router init --trust {name}=<model>` naming the local model to use")
+                             f"`endorouter init --trust {name}=<model>` naming the local model to use")
                 continue
             models = _local_models(c, url, models, ollama_api=program == "ollama" or _speaks_ollama(c, url))
             if not models:
