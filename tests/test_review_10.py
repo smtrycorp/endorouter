@@ -150,7 +150,7 @@ def test_config_invariants_hold_for_every_construction(targets, match):
 
 
 @pytest.mark.parametrize("section", ["provenance", "classifier"])
-@pytest.mark.parametrize("value", [False, [], 0, ""])
+@pytest.mark.parametrize("value", [None, False, [], 0, ""])
 def test_a_falsey_section_is_an_error_not_a_default(section, value):
     with pytest.raises(ConfigError):
         parse_config({"version": 1, "targets": {"l": {"url": "http://127.0.0.1/v1", "model": "m", "location": "local"}},

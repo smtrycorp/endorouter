@@ -122,11 +122,12 @@ def _strs(v: Any, where: str) -> tuple[str, ...]:
 
 
 def _section(raw: dict, name: str) -> dict:
-    """An optional mapping. Written but not a mapping (false, [], 0) is an error, never the defaults."""
-    if name not in raw or raw[name] is None:
+    """An optional mapping. Written but not a mapping (null, false, [], 0) is an error, never the defaults: a
+    section left empty by mistake would otherwise silently trust the default clients."""
+    if name not in raw:
         return {}
     if not isinstance(raw[name], dict):
-        raise ConfigError(f"{name} must be a mapping")
+        raise ConfigError(f"{name} must be a mapping (write {{}} for the defaults, or leave it out)")
     return raw[name]
 
 

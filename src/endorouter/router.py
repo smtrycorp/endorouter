@@ -85,7 +85,10 @@ class Router:
         declared: Label | None = None,
         capability: str | None = None,
         request_id: str | None = None,
+        sent: list[str] | None = None,
     ) -> tuple[Decision, list[Finding]]:
+        """The decision for a request. The local classifier, when enabled, receives the text here; its name is added
+        to sent first, so an audit failure after that is never reported as "nothing was sent"."""
         # scanning is CPU work; in a thread, a large request cannot stall every other request in flight
         findings = await asyncio.to_thread(scan_request, body, [(f"sources[{i}]", s) for i, s in enumerate(sources)])
         verdict = None
@@ -96,6 +99,8 @@ class Router:
             if ct is not None and (not (ct.verify_program or ct.ollama_api)
                                    or await self._still_verified(ct, request_id or "")):
                 self.audit.write({"event": "classifier_dispatch", "request_id": request_id, "target": ct.name})
+                if sent is not None:
+                    sent.append(ct.name)
                 verdict = await classify(self.cfg, body, self.client, on_failure=lambda kind: self.audit.write(
                     {"event": "classifier_failed", "request_id": request_id, "kind": kind}))
         d = decide(
@@ -133,16 +138,17 @@ class Router:
         if problem:  # the same refusal a library caller gets as an HTTP caller
             raise InvalidRequest(problem)
         sources = tuple(str(s) for s in sources)
-        decision, _ = await self.plan(body, sources=sources, declared=declared, capability=capability, request_id=request_id)
-        # written and flushed before anything leaves; raises AuditError (the caller refuses) if the log is unwritable
-        self.audit.write({"event": "decision", "request_id": request_id, "mode": self.cfg.mode,
-                          "policy_version": POLICY_VERSION, "peer": peer, "trusted": trusted,
-                          "declared": declared.name.lower() if declared is not None else None, "sources": len(sources),
-                          **decision.as_record()})
-        if decision.selected is None:
-            raise Refused(decision, request_id)
-        sent: list[str] = []  # targets that may hold the prompt: from here on, an audit failure is never "nothing sent"
+        sent: list[str] = []  # every target that may hold the prompt, the local classifier included
         try:
+            decision, _ = await self.plan(body, sources=sources, declared=declared, capability=capability,
+                                          request_id=request_id, sent=sent)
+            # flushed before any target is sent the request; an AuditError here, with nothing sent, is a refusal
+            self.audit.write({"event": "decision", "request_id": request_id, "mode": self.cfg.mode,
+                              "policy_version": POLICY_VERSION, "peer": peer, "trusted": trusted,
+                              "declared": declared.name.lower() if declared is not None else None,
+                              "sources": len(sources), **decision.as_record()})
+            if decision.selected is None:
+                raise Refused(decision, request_id)
             return await self._dispatch(body, decision, request_id, sent)
         except AuditError:
             if not sent:

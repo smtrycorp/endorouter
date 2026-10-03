@@ -261,8 +261,26 @@ def _shape_findings(t: str, where: str) -> Iterator[Finding]:
 # letter by letter, credential punctuation kept; bounded and linear
 _SPACED = re.compile(r"(?<![A-Za-z0-9_.\-])(?:[A-Za-z0-9_.\-] ){7,4096}[A-Za-z0-9_.\-](?![A-Za-z0-9_.\-])")
 # a JSON string literal holding escapes, anywhere in prose ("Tool returned: {\"k\": \"\\u0041KIA...\"}"), decoded
-_JSON_STR = re.compile(r'"(?:[^"\\\n]|\\.)*"')  # disjoint alternatives: linear, no length cap to slip past
+_PLAIN_RUN = re.compile(r'[^"\\]*')
 
+
+def _string_literals(line: str, start: int) -> Iterator[str]:
+    """The double-quoted literals of one line, left to right, from start. One forward pass: when a literal never
+    closes, no later quote can open one that does (an escaped quote stays escaped whichever quote the reading starts
+    from, since the backslashes before it are the same), so the scan stops instead of retrying from each quote. A
+    regex retrying from every quote took quadratic time on a line of escaped quotes."""
+    i = start
+    while (q := line.find('"', i)) >= 0:
+        j = q + 1
+        while True:
+            j = _PLAIN_RUN.match(line, j).end()
+            if j >= len(line):
+                return
+            if line[j] == '"':
+                break
+            j += 2  # a backslash and the character it escapes
+        yield line[q : j + 1]
+        i = j + 1
 
 
 def _json_literals(t: str) -> Iterator[str]:
@@ -271,9 +289,8 @@ def _json_literals(t: str) -> Iterator[str]:
     for line in t.split("\n"):
         if '"' not in line or "\\" not in line:
             continue
-        yield from (m.group(0) for m in _JSON_STR.finditer(line))
-        first = line.find('"')
-        yield from (m.group(0) for m in _JSON_STR.finditer(line, first + 1))
+        yield from _string_literals(line, 0)
+        yield from _string_literals(line, line.find('"') + 1)
 
 
 def _decoded_findings(t: str, where: str) -> Iterator[Finding]:

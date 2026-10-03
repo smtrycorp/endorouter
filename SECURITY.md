@@ -19,7 +19,7 @@ with the case credited to you, unless you prefer not to be named.
 - A private or unlabelled request reaching a cloud target in strict mode.
 - A request labelled private, or carrying a private source, reaching a cloud target in any mode.
 - A secret matching one of the documented detector rules, sent to the cloud under a public label.
-- Anything sent before its decision was written to the audit log, or prompt content written to the log.
+- Anything sent before an audit record naming its destination was written, a send reported as anything other than sent, or prompt content written to the log.
 - A caller that is not in `trusted_clients` getting work labelled public.
 - A discovered local target that forwards to a remote model without the router noticing.
 

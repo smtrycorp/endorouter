@@ -104,7 +104,7 @@ def test_a_content_length_too_long_to_convert_is_413(tmp_path):
     assert asyncio.run(_read_body(Req())) is None
 
 
-def test_an_oversized_source_header_is_private_unread(tmp_path):
+def test_an_oversized_source_header_is_refused_unread(tmp_path):
     hosts = []
     cfg = make_cfg(tmp_path)
     router = Router(cfg, client=httpx.AsyncClient(
@@ -113,7 +113,7 @@ def test_an_oversized_source_header_is_private_unread(tmp_path):
     r = _client(create_app(cfg, router), client=("127.0.0.1", 1)).post(
         "/v1/chat/completions", json={**BODY, "model": "cloud/cm"},
         headers={"x-endorouter-source": "docs/public/" + "a/" * 2000 + "x.md", "x-endorouter-label": "public"})
-    assert r.status_code == 403 and "cloud.test" not in hosts
+    assert r.status_code == 400 and hosts == []
 
 
 def test_a_classifier_answer_that_is_not_utf8_is_recorded(tmp_path):

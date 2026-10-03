@@ -91,17 +91,23 @@ def create_app(cfg: Config, router: Router | None = None) -> Starlette:
             return _error(400, f"x-endorouter-label: {e}")
         if not trusted and label is not Label.PRIVATE:
             label = None  # an untrusted caller cannot declare anything public
-        # One source per header value, since paths and URLs can contain commas. A proxy may still join repeated
-        # headers with commas, so every comma-separated piece is also checked against the private patterns: a
-        # piece that is private tightens the request, whoever sent it, which is always safe.
-        raw_sources = [v.strip() for v in request.headers.getlist("x-endorouter-source") if v.strip()]
-        pieces = {p.strip() for v in raw_sources for p in v.split(",") if p.strip()} | set(raw_sources)
-        if len(pieces) > MAX_SOURCES or any(len(s) > MAX_SOURCE_CHARS for s in pieces):
-            label, raw_sources = Label.PRIVATE, []  # too large to match cheaply: the safe reading, unread
-        elif any(source_label(s, cfg)[0] is Label.PRIVATE for s in pieces):
-            label = Label.PRIVATE
-        if not trusted:
-            raw_sources = []  # an untrusted caller's sources could only lift a label, so they are not used
+        # One source per header value, since paths and URLs can contain commas. Header bytes are read as UTF-8:
+        # the HTTP layer hands them over as Latin-1, which would turn 'café/' into text no private pattern matches.
+        try:
+            values = [v.encode("latin-1").decode("utf-8").strip() for v in request.headers.getlist("x-endorouter-source")]
+        except UnicodeError:
+            return _error(400, "x-endorouter-source must be UTF-8")
+        values = [v for v in values if v]
+        # A proxy may join repeated headers with commas, so each comma-separated piece is checked too. Counted
+        # before duplicates are dropped, and refused when over the limit: matching cost grows with them.
+        pieces = [p.strip() for v in values for p in v.split(",") if p.strip()]
+        if len(pieces) > MAX_SOURCES or any(len(v) > MAX_SOURCE_CHARS for v in values):
+            return _error(400, f"x-endorouter-source: at most {MAX_SOURCES} sources of {MAX_SOURCE_CHARS} characters")
+        # A private piece is passed on as a source, whoever sent it: it can only tighten, and the record then says
+        # which source made the request private instead of rewriting what the caller declared. An untrusted
+        # caller's other sources are dropped, since they could only lift a label.
+        private = [p for p in dict.fromkeys(pieces + values) if source_label(p, cfg)[0] is Label.PRIVATE]
+        raw_sources = list(dict.fromkeys((values if trusted else []) + private))
         caps = request.headers.getlist("x-endorouter-capability")
         if len(caps) > 1:
             return _error(400, "x-endorouter-capability may be sent once")

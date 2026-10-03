@@ -80,13 +80,13 @@ def _marked(case: dict, model: str | None = None) -> tuple[dict, str]:
     # letters only, so the marker itself never looks like a secret to any detector (a random hex marker did)
     marker = "lbk" + "".join(secrets.choice("abcdefghijklmnopqrstuvwxyz") for _ in range(24))
     msgs = json.loads(json.dumps(case["messages"]))
-    for m in msgs:  # every message with text, so history sent without the last turn still carries the marker
+    # One marker, at the very end of the last text, so it never sits between two messages a detector reads as one
+    # (a key split across messages must stay joinable). Parts of a conversation sent without it are found by their
+    # content instead: see _fingerprints.
+    for m in reversed(msgs):
         if isinstance(m.get("content"), str):
             m["content"] = f"{m['content']}\n[{marker}]"
-        elif isinstance(m.get("content"), list):
-            for part in m["content"]:
-                if isinstance(part, dict) and isinstance(part.get("text"), str):
-                    part["text"] = f"{part['text']}\n[{marker}]"
+            break
     # every request field a case carries is kept (stop, response_format, tools, ...); only benchmark metadata is not sent
     fields = {k: json.loads(json.dumps(v)) for k, v in case.items() if k not in CASE_METADATA}
     return {**fields, "model": model or case.get("model", "auto"), "messages": msgs}, marker
@@ -94,6 +94,51 @@ def _marked(case: dict, model: str | None = None) -> tuple[dict, str]:
 
 CALIBRATION = {"id": "calibration", "category": "calibration", "truth": "public",
                "messages": [{"role": "user", "content": "What is the capital of France?"}]}
+
+
+FINGERPRINT_MIN = 12  # shorter strings ("hello", "auto") are too common to say which case they came from
+
+
+def _strings(value) -> list[str]:
+    """Every string in a JSON value, keys included. Iterative, so nesting depth cannot crash it."""
+    out, stack = [], [value]
+    while stack:
+        v = stack.pop()
+        if isinstance(v, str):
+            out.append(v)
+        elif isinstance(v, dict):
+            stack.extend(v.keys())
+            stack.extend(v.values())
+        elif isinstance(v, list):
+            stack.extend(v)
+    return out
+
+
+def _fingerprints(bodies: dict[str, dict], markers: set[str]) -> dict[str, set[str]]:
+    """Per case, the strings only that case sent: message text, tool-call arguments, tool definitions. A strip of
+    the marker first, and any string another case also sent is dropped, so a shared system prompt names no one."""
+    raw = {}
+    for cid, body in bodies.items():
+        found = set()
+        for s in _strings({k: v for k, v in body.items() if k != "model"}):
+            for m in markers:
+                s = s.replace(f"\n[{m}]", "")
+            if len(s) >= FINGERPRINT_MIN:
+                found.add(s)
+        raw[cid] = found
+    counts: dict[str, int] = defaultdict(int)
+    for found in raw.values():
+        for s in found:
+            counts[s] += 1
+    return {cid: {s for s in found if counts[s] == 1} for cid, found in raw.items()}
+
+
+def _received(raw: str) -> str:
+    """What a sink was sent, as decoded text: every string in its JSON, so escaping cannot hide a fingerprint."""
+    try:
+        return "\n".join(_strings(json.loads(raw)))
+    except (ValueError, RecursionError):
+        return raw
 
 
 def _answered_by(text: str) -> str:
@@ -107,6 +152,7 @@ def _answered_by(text: str) -> str:
 async def run(base_url: str, cases_path: str | None = None, *, sink_port: int = 8799, sources_header: bool = True,
               model: str | None = None, extra_body: dict | None = None, settle_s: float = 1.0) -> dict:
     cases = load_cases(cases_path)
+    sent_bodies: dict[str, dict] = {}
     cloud_seen: list[tuple[str | None, str]] = []
     local_seen: list[tuple[str | None, str]] = []
     in_flight: dict = {"case": None}
@@ -117,6 +163,7 @@ async def run(base_url: str, cases_path: str | None = None, *, sink_port: int = 
         async with httpx.AsyncClient(timeout=60, trust_env=False) as client:
             for c in [CALIBRATION, *cases]:
                 body, marker = _marked(c, model)
+                sent_bodies[c["id"]] = body
                 if extra_body:
                     body.update(json.loads(json.dumps(extra_body).replace("{id}", c["id"])))
                 headers: list[tuple[str, str]] = []
@@ -145,12 +192,16 @@ async def run(base_url: str, cases_path: str | None = None, *, sink_port: int = 
         local.should_exit = True
         await asyncio.sleep(0.1)
 
-    # A request belongs to every case whose marker it carries; only a request with no marker at all falls back to the
-    # case in flight, so a late send of one case is never credited to the next.
+    # A request belongs to every case whose marker it carries, and to every case whose own content it carries (so a
+    # part of a conversation sent without the marker, such as a tool call, is still credited to its case). Only a
+    # request with neither falls back to the case in flight, so a late send of one case is never credited to the next.
     markers = {r["marker"]: r["id"] for r in rows}
+    prints = _fingerprints(sent_bodies, set(markers))
 
     def owners(case: str | None, raw: str) -> set[str]:
-        found = {cid for m, cid in markers.items() if m in raw}
+        text = _received(raw)
+        found = {cid for m, cid in markers.items() if m in text}
+        found |= {cid for cid, ss in prints.items() if any(s in text for s in ss)}
         return found or ({case} if case else set())
 
     cloud_ids = [owners(c, raw) for c, raw in cloud_seen]

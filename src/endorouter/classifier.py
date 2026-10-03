@@ -61,7 +61,7 @@ async def classify(cfg: Config, body: dict, client: httpx.AsyncClient,
     except httpx.HTTPError as e:
         failed(f"unreachable:{type(e).__name__}")
         return None
-    except (ValueError, KeyError, IndexError, TypeError):  # ValueError covers bad JSON and bad UTF-8
+    except (ValueError, KeyError, IndexError, TypeError, RecursionError):  # bad JSON or UTF-8, or absurd nesting
         failed("malformed_response")
         return None
     m = _VERDICT.fullmatch(answer.strip().upper()) if isinstance(answer, str) else None
