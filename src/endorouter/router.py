@@ -39,6 +39,20 @@ class Refused(Exception):
         self.request_id = request_id
 
 
+def _plain_json(body) -> dict:
+    """The request as the JSON that will be sent, validated; raises InvalidRequest. One representation from here on:
+    validating, scanning and sending the same value closes the gap a tuple or a numeric dict key opened, where the
+    scan saw one shape and the wire another, and it is a private copy the caller cannot change mid-flight."""
+    try:
+        body = json.loads(json.dumps(body, allow_nan=False))
+    except (TypeError, ValueError, RecursionError) as e:
+        raise InvalidRequest("the request must be plain JSON: strings, numbers, booleans, lists and objects") from e
+    problem = validate(body)
+    if problem:  # the same refusal a library caller gets as an HTTP caller
+        raise InvalidRequest(problem)
+    return body
+
+
 class SentUnrecorded(Exception):
     """The request reached a target, but the record of that could not be written. Distinct from a refusal: the prompt
     has left, and the caller must not be told otherwise."""
@@ -135,16 +149,7 @@ class Router:
         """Route one chat request. Raises InvalidRequest, AuditError (nothing was sent), Refused, UpstreamFailed, or
         SentUnrecorded (sent, but not recorded). peer and trusted say who supplied any label, for the audit log."""
         request_id = uuid.uuid4().hex[:16]
-        # One representation from here on: the JSON that will be sent. Validating, scanning and sending the same
-        # bytes closes the gap a tuple or a numeric dict key opened, where the scan saw one shape and the wire another;
-        # it is also the private snapshot a caller cannot change mid-flight.
-        try:
-            body = json.loads(json.dumps(body, allow_nan=False))
-        except (TypeError, ValueError, RecursionError) as e:
-            raise InvalidRequest("the request must be plain JSON: strings, numbers, booleans, lists and objects") from e
-        problem = validate(body)
-        if problem:  # the same refusal a library caller gets as an HTTP caller
-            raise InvalidRequest(problem)
+        body = await asyncio.to_thread(_plain_json, body)  # megabytes of work, off the event loop
         sources = tuple(str(s) for s in sources)
         given = supplied if supplied is not None else declared  # Label.PUBLIC is 0: never test labels for truth
         sent: list[str] = []  # every target that may hold the prompt, the local classifier included

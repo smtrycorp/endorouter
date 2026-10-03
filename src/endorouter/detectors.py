@@ -442,7 +442,7 @@ def _walk(obj, where: _Loc) -> Iterator[tuple[_Loc, str]]:
 
 def texts_in_request(body: dict) -> Iterator[tuple[str, str]]:
     """The forwarded text, for readers such as the classifier (undecodable markers left out)."""
-    return ((str(w), t) for w, t in _texts(body) if not isinstance(t, _Undecodable))
+    return ((w, t) for w, t in _texts(body) if not isinstance(t, _Undecodable))  # locations as built, not as text
 
 
 def _texts(body: dict) -> Iterator[tuple[_Loc, str]]:
@@ -517,8 +517,10 @@ def scan_request(body: dict, extra: Iterable[tuple[str, str]] = ()) -> list[Find
         if isinstance(text, _Undecodable):
             add("undecodable_nested_json", where)
             continue
-        if len(text.strip()) < MIN_SCANNED:
-            continue  # too short to hold any format a rule knows; pieces of a split secret are caught in the joins above
+        if len(text) < MIN_SCANNED and text.isascii():
+            # too short to hold any format a rule knows. ASCII only: normalisation can lengthen other text (a@b.㏄
+            # becomes the email a@b.cc), so a short non-ASCII string is scanned like any other
+            continue
         for f in scan_text(text, str(where) if isinstance(where, str) else ""):
             add(f.rule, where)
     return found

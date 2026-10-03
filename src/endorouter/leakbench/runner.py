@@ -44,6 +44,8 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse
 from starlette.routing import Route
 
+from ..detectors import normalise
+
 
 def _fake_openai(name: str, seen: list[str]) -> Starlette:
     async def chat(request: Request):
@@ -91,13 +93,13 @@ CALIBRATION = {"id": "calibration", "category": "calibration", "truth": "public"
                "messages": [{"role": "user", "content": "What is the capital of France?"}]}
 
 EVIDENCE_MIN = 8  # shorter strings ("hello", "auto") are too common to say which case they came from; reported as unmeasured
-TOKEN_MIN = 12  # a word this long (a key, an id) is evidence on its own, so a credential cut out of its sentence is seen
 # request fields that say how to answer, never what: not evidence, and a gateway may add them to any request
 CONTROL_FIELDS = frozenset({"model", "stream", "stream_options", "n", "temperature", "top_p", "max_tokens",
                             "max_completion_tokens", "presence_penalty", "frequency_penalty", "seed", "logprobs",
-                            "top_logprobs", "parallel_tool_calls", "tool_choice"})
-# keys whose values are API syntax (roles, types, ids, identifiers), never what a case says
-SYNTAX_KEYS = frozenset({"role", "type", "id", "tool_call_id", "name", "$schema", "format"})
+                            "top_logprobs", "parallel_tool_calls"})
+# keys whose values are API syntax (roles, types, ids), never what a case says. Function names are content: a case
+# can name a tool after a secret, and names a gateway adds are filtered out as its boilerplate (see run)
+SYNTAX_KEYS = frozenset({"role", "type", "id", "tool_call_id", "$schema", "format"})
 
 
 def _payload(body) -> list[str]:
@@ -115,7 +117,7 @@ def _payload(body) -> list[str]:
             stack += [(m.get(k), False) for k in ("content", "refusal") if m.get(k) is not None]
             for call in m.get("tool_calls") or []:
                 if isinstance(call, dict) and isinstance(call.get("function"), dict):
-                    stack.append((call["function"].get("arguments"), False))
+                    stack += [(call["function"].get(k), False) for k in ("name", "arguments")]
     stack += [(v, False) for k, v in body.items() if k not in CONTROL_FIELDS and k != "messages"]
     while stack:
         v, props = stack.pop()
@@ -124,13 +126,12 @@ def _payload(body) -> list[str]:
         elif isinstance(v, bool) or v is None:
             continue
         elif isinstance(v, (int, float)):
-            if len(str(v)) >= EVIDENCE_MIN:
-                out.append(str(v))
+            out.append(str(v))  # short ones are reported as unmeasured, like short strings
         elif isinstance(v, dict):
             for k, x in v.items():
                 if props and isinstance(k, str):
                     out.append(k)  # a schema's property name is content: it can be a secret
-                if k not in SYNTAX_KEYS:
+                if props or k not in SYNTAX_KEYS:  # a property may be called "type" or "id" and still hold content
                     stack.append((x, k == "properties"))
         elif isinstance(v, list):
             stack += [(x, False) for x in v]
@@ -138,15 +139,26 @@ def _payload(body) -> list[str]:
 
 
 _TOKEN = re.compile(r"[^\s\"'`,;:()\[\]{}<>]+")
+_WORDLIKE = re.compile(r"[A-Za-z][a-z]+")  # an ordinary word ("instructions", "Confidential"): never a secret alone
+
+
+def _norm(s: str) -> str:
+    """Text as compared: normalised the way the detectors read it (NFKC, invisible characters removed, look-alike
+    letters mapped) with runs of whitespace made one space, on both sides, so a gateway that strips a zero-width
+    space from a key, or re-spaces it, still delivers the same evidence."""
+    return " ".join(normalise(s).split())
 
 
 def _case_evidence(body: dict) -> tuple[set[str], set[str]]:
-    """A case's evidence (strings and long tokens of EVIDENCE_MIN+ characters), and the short strings that are too
-    short to be measured."""
-    strings = {s.strip() for s in _payload(body)}
-    tokens = {tok.strip(".!?") for s in strings for tok in _TOKEN.findall(s)}
-    evidence = {s for s in strings if len(s) >= EVIDENCE_MIN} | {x for x in tokens if len(x) >= TOKEN_MIN}
-    return evidence, {s for s in strings if 0 < len(s) < EVIDENCE_MIN}
+    """A case's evidence: its strings of EVIDENCE_MIN+ characters, and the secret-like words inside them (a digit, a
+    symbol or mixed case, EVIDENCE_MIN+ characters), so a key or password cut out of its sentence is still seen.
+    Ordinary words are not evidence alone: a gateway's own wording would otherwise match them. Also returns the
+    strings too short to measure."""
+    strings = {_norm(s) for s in _payload(body)} - {""}
+    words = {w.strip(".!?") for s in strings for w in _TOKEN.findall(s)}
+    secretish = {w for w in words if len(w) >= EVIDENCE_MIN and not _WORDLIKE.fullmatch(w)}
+    evidence = {s for s in strings if len(s) >= EVIDENCE_MIN} | secretish
+    return evidence, {s for s in strings if len(s) < EVIDENCE_MIN}
 
 
 def validate_suite(cases: list[dict]) -> None:
@@ -154,14 +166,22 @@ def validate_suite(cases: list[dict]) -> None:
     truth other than "private" or "public" (it would be scored as public), or a case with no messages."""
     seen = {CALIBRATION["id"]}
     for i, c in enumerate(cases):
+        if not isinstance(c, dict):
+            raise ValueError(f"case {i}: must be an object")
         cid = c.get("id")
         if not isinstance(cid, str) or not cid or cid in seen:
             raise ValueError(f"case {i}: id {cid!r} is missing, repeated, or reserved")
         seen.add(cid)
         if c.get("truth") not in ("private", "public"):
             raise ValueError(f"case {cid!r}: truth must be \"private\" or \"public\", not {c.get('truth')!r}")
-        if not isinstance(c.get("messages"), list) or not c["messages"]:
-            raise ValueError(f"case {cid!r}: messages must be a non-empty list")
+        if not isinstance(c.get("messages"), list) or not c["messages"] or not all(
+                isinstance(m, dict) and isinstance(m.get("role"), str) for m in c["messages"]):
+            raise ValueError(f"case {cid!r}: messages must be a non-empty list of objects with a role")
+        sources = c.get("sources", [])
+        if not isinstance(sources, list) or not all(isinstance(s, str) and s for s in sources):
+            raise ValueError(f"case {cid!r}: sources must be a list of strings")
+        if c.get("label") not in (None, "public", "private"):
+            raise ValueError(f"case {cid!r}: label must be \"public\" or \"private\"")
 
 
 def _evidence(bodies: dict[str, dict], truths: dict[str, str]
@@ -171,7 +191,7 @@ def _evidence(bodies: dict[str, dict], truths: dict[str, str]
     case, which then leaked too), and the strings too short to measure. Raises ValueError for a case with nothing
     of its own: it could not be told apart from the others, so no result about it would mean anything."""
     measured = {cid: _case_evidence(b) for cid, b in bodies.items()}
-    payloads = {cid: [s for s in _payload(b)] for cid, b in bodies.items()}
+    payloads = {cid: [_norm(s) for s in _payload(b)] for cid, b in bodies.items()}
     public_text = [s for cid, ss in payloads.items() if truths[cid] == "public" for s in ss]
     ident, leak, unmeasured = {}, {}, {}
     for cid, (mine, short) in measured.items():
@@ -189,9 +209,9 @@ def _evidence(bodies: dict[str, dict], truths: dict[str, str]
 def _received(raw: str) -> list[str]:
     """What a sink was sent, read as a case is (see _payload); a body that is not JSON is one string."""
     try:
-        return _payload(json.loads(raw))
+        return [_norm(s) for s in _payload(json.loads(raw))]
     except (ValueError, RecursionError):
-        return [raw]
+        return [_norm(raw)]
 
 
 def _contains(evidence: set[str], got: list[str]) -> bool:
@@ -255,6 +275,20 @@ async def run(base_url: str, cases_path: str | None = None, *, sink_port: int = 
     cloud_got = [_received(raw) for raw in cloud_seen]
     local_got = [_received(raw) for raw in local_seen]
 
+    # The gateway's own wording: whatever arrived with the calibration request that calibration did not say (a
+    # system prompt it adds, default stop sequences, its own tools). It is in every request the gateway sends, so it
+    # can identify no case and prove no leak; evidence found inside it is dropped.
+    cal_own = {_norm(s) for s in _payload(bodies[CALIBRATION["id"]])}
+    boilerplate = {s for g in cloud_got + local_got if _contains(ident[CALIBRATION["id"]], g)
+                   for s in g if s and not any(s in own for own in cal_own)}
+
+    def own(evidence: set[str]) -> set[str]:
+        return {e for e in evidence if not any(e in b for b in boilerplate)}
+
+    ident = {cid: own(ev) for cid, ev in ident.items()}
+    leak_evidence = {cid: own(ev) for cid, ev in leak_evidence.items()}
+    swallowed = sorted(cid for cid, ev in ident.items() if not ev and cid != CALIBRATION["id"])
+
     def at(got: list[list[str]], cid: str) -> bool:
         return any(_contains(ident[cid], g) for g in got)
 
@@ -302,6 +336,9 @@ async def run(base_url: str, cases_path: str | None = None, *, sink_port: int = 
                         "operational or not wired to the sinks, so its refusals mean nothing")
     if unrouted:
         problems.append(f"{len(unrouted)} case(s) reached no sink and were not refused")
+    if swallowed:
+        problems.append(f"{len(swallowed)} case(s) say nothing the gateway does not add to every request itself, so "
+                        f"where they went cannot be told: {', '.join(swallowed)}")
     if stray:
         problems.append(f"{stray} request(s) reached a sink carrying no case's content: they cannot be attributed, "
                         "so a leak could hide among them")

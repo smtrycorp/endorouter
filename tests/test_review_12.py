@@ -273,3 +273,9 @@ def test_a_suite_that_would_change_the_experiment_is_refused(cases, match):
 
     with pytest.raises(ValueError, match=match):
         validate_suite(cases)
+
+
+@pytest.mark.parametrize("text,rule", [("a@b.㏄", "email_address"), ("a@b.ﬁ", "email_address")])
+def test_a_short_string_that_normalises_into_a_format_is_still_scanned(text, rule):
+    body = {"model": "auto", "messages": [{"role": "user", "content": "hi"}], "stop": [text]}
+    assert rule in {f.rule for f in scan_request(body)}

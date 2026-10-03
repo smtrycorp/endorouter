@@ -5,6 +5,7 @@ None, and None never grants anything."""
 
 from __future__ import annotations
 
+import asyncio
 import re
 import secrets
 from collections.abc import Callable
@@ -29,6 +30,18 @@ _VERDICT = re.compile(r"[\"'`*]*(PRIVATE|PUBLIC)[\"'`*]*\.?")
 MAX_CHARS = 12000
 
 
+def _text_upto(body: dict, limit: int) -> str:
+    """The request's text as the classifier reads it, gathered only until it passes limit: a request too long to
+    classify is known to be too long without walking all of it."""
+    parts, size = [], 0
+    for _, s in texts_in_request(body):
+        parts.append(s)
+        size += len(s) + 1
+        if size > limit:
+            break
+    return "\n".join(parts)
+
+
 async def classify(cfg: Config, body: dict, client: httpx.AsyncClient,
                    on_failure: Callable[[str], None] | None = None,
                    on_send: Callable[[], None] | None = None) -> Label | None:
@@ -44,7 +57,7 @@ async def classify(cfg: Config, body: dict, client: httpx.AsyncClient,
     t = cfg.target(cfg.classifier.target or "")
     if t is None or not t.is_local:  # defence in depth; config validation already requires this
         return None
-    text = "\n".join(s for _, s in texts_in_request(body))
+    text = await asyncio.to_thread(_text_upto, body, MAX_CHARS + 1)
     if len(text) > MAX_CHARS:
         # never clear text the classifier did not read: a long request gets no verdict (strict treatment)
         failed("too_long")

@@ -14,6 +14,7 @@ than silently dropped.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import sys
 
@@ -77,10 +78,10 @@ def create_app(cfg: Config, router: Router | None = None) -> Starlette:
         if raw is None:
             return _error(413, f"request body over {MAX_BODY // (1024 * 1024)} MB")
         try:
-            body = json.loads(raw)
+            body = await asyncio.to_thread(json.loads, raw)  # parsing megabytes off the event loop
         except (ValueError, RecursionError):  # bad JSON or UTF-8, a number too long to convert, or absurd nesting
             return _error(400, "invalid JSON")
-        problem = _validate(body)
+        problem = await asyncio.to_thread(_validate, body)
         if problem:
             return _error(400, problem)
         peer = request.client.host if request.client else ""

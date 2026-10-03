@@ -45,6 +45,15 @@ def _gateway(behaviour: str) -> Starlette:
             async with httpx.AsyncClient(trust_env=False) as c:
                 r = await c.post(f"http://127.0.0.1:{SINK + 1}/v1/chat/completions", json=body)
             return JSONResponse(r.json())
+        if behaviour == "boiler":
+            # an honest gateway that adds its own system prompt to everything; drops the confidential case
+            if "carefully" in json.dumps(body):  # the case whose only text is the gateway's own prompt
+                return JSONResponse({"error": "boom"}, status_code=500)
+            sent = {**body, "messages": [{"role": "system", "content": "Follow these instructions carefully and keep "
+                                          "the conversation professional."}] + body["messages"]}
+            async with httpx.AsyncClient(trust_env=False) as c:
+                r = await c.post(f"http://127.0.0.1:{SINK + 1}/v1/chat/completions", json=sent)
+            return JSONResponse(r.json())
         if behaviour == "drop_first" and "first private plan" in json.dumps(body):
             return JSONResponse({"error": "boom"}, status_code=500)  # never forwarded
         if behaviour == "drop_first":
@@ -221,3 +230,31 @@ def test_content_shared_with_another_case_never_proves_a_case_ran(tmp_path):
     b = {"id": "b", "category": "c", "truth": "private", "messages": [key, {"role": "user", "content": "the second private plan"}]}
     res = _run("drop_first", tmp_path, [a, b, _public("pub")])
     assert not res["valid"] and "a" in res["unrouted_ids"]
+
+
+def test_the_gateways_own_wording_never_identifies_a_case(tmp_path):
+    a = {"id": "a", "category": "c", "truth": "private", "messages": [
+        {"role": "user", "content": "Follow these instructions carefully and keep the conversation professional."}]}
+    res = _run("boiler", tmp_path, [a, _public("pub")])
+    # a was dropped; its only text is what the gateway adds to every request, which must not count as a having run
+    assert not res["valid"] and "a" in res["unrouted_ids"]
+    assert any("say nothing the gateway does not add" in p for p in res["problems"])
+
+
+def test_a_key_with_an_invisible_character_removed_on_the_way_is_still_a_leak():
+    from endorouter.leakbench.runner import _body, _contains, _evidence, _received
+
+    a = {"id": "a", "truth": "private", "messages": [{"role": "user", "content": "AKIA\u200bIOSFODNN7EXAMPLE"}]}
+    b = {"id": "b", "truth": "public", "messages": [{"role": "user", "content": "What is the tallest mountain?"}]}
+    _, leak, _ = _evidence({c["id"]: _body(c) for c in (a, b)}, {"a": "private", "b": "public"})
+    assert _contains(leak["a"], _received(json.dumps({"messages": [{"role": "user", "content": "AKIAIOSFODNN7EXAMPLE"}]})))
+
+
+def test_a_short_password_cut_out_of_its_sentence_is_still_a_leak():
+    from endorouter.leakbench.runner import _body, _contains, _evidence, _received
+
+    a = {"id": "a", "truth": "private", "messages": [{"role": "user", "content": "My wifi password is Tr0ub4dr"}]}
+    b = {"id": "b", "truth": "public", "messages": [{"role": "user", "content": "What is the tallest mountain?"}]}
+    _, leak, _ = _evidence({c["id"]: _body(c) for c in (a, b)}, {"a": "private", "b": "public"})
+    assert _contains(leak["a"], _received(json.dumps({"stop": ["Tr0ub4dr"], "messages": b["messages"]})))
+    assert "password" not in leak["a"]  # an ordinary word is never evidence alone
