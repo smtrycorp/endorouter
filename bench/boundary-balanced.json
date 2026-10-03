@@ -13,6 +13,9 @@
   "public_cases": 2,
   "over_restricted": "0/2",
   "leaked_ids": [],
+  "unmeasured_ids": [
+    "pub-label-history"
+  ],
   "by_category": {
     "known_miss": {
       "cases": 5,
@@ -86,6 +89,9 @@
       "truth": "private",
       "status": 200,
       "answered_by": "local",
+      "unmeasured": [
+        "Got it."
+      ],
       "reached": "local"
     },
     {

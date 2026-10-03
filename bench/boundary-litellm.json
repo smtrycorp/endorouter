@@ -22,6 +22,9 @@
     "miss-wrapped-base64",
     "miss-short-key"
   ],
+  "unmeasured_ids": [
+    "pub-label-history"
+  ],
   "by_category": {
     "known_miss": {
       "cases": 5,
@@ -98,6 +101,9 @@
       "status": 400,
       "answered_by": null,
       "refusal": "{\"error\":{\"message\":\"Content blocked: github_token pattern detected\",\"type\":\"invalid_request_error\",\"param\":null,\"code\":\"400\",\"provider_specific_fields\":{\"error\":\"Content blocked: github_token pattern",
+      "unmeasured": [
+        "Got it."
+      ],
       "reached": "refused"
     },
     {

@@ -38,6 +38,9 @@
     "ctx-code",
     "ctx-multilingual"
   ],
+  "unmeasured_ids": [
+    "sec-tool-args"
+  ],
   "by_category": {
     "declared_private": {
       "cases": 1,
@@ -192,6 +195,9 @@
       "truth": "private",
       "status": 200,
       "answered_by": "cloud",
+      "unmeasured": [
+        "200 OK"
+      ],
       "reached": "cloud"
     },
     {

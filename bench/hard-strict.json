@@ -13,6 +13,9 @@
   "public_cases": 8,
   "over_restricted": "8/8",
   "leaked_ids": [],
+  "unmeasured_ids": [
+    "split-messages"
+  ],
   "by_category": {
     "classifier_injection": {
       "cases": 2,
@@ -118,6 +121,9 @@
       "truth": "private",
       "status": 200,
       "answered_by": "local",
+      "unmeasured": [
+        "Got it."
+      ],
       "reached": "local"
     },
     {

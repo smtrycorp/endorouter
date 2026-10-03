@@ -13,6 +13,9 @@
   "public_cases": 5,
   "over_restricted": "5/5",
   "leaked_ids": [],
+  "unmeasured_ids": [
+    "sec-tool-args"
+  ],
   "by_category": {
     "declared_private": {
       "cases": 1,
@@ -167,6 +170,9 @@
       "truth": "private",
       "status": 200,
       "answered_by": "local",
+      "unmeasured": [
+        "200 OK"
+      ],
       "reached": "local"
     },
     {

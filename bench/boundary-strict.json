@@ -19,6 +19,9 @@
     "miss-wrapped-base64",
     "miss-short-key"
   ],
+  "unmeasured_ids": [
+    "pub-label-history"
+  ],
   "by_category": {
     "known_miss": {
       "cases": 5,
@@ -92,6 +95,9 @@
       "truth": "private",
       "status": 200,
       "answered_by": "local",
+      "unmeasured": [
+        "Got it."
+      ],
       "reached": "local"
     },
     {
