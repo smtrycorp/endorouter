@@ -45,6 +45,12 @@ def _gateway(behaviour: str) -> Starlette:
             async with httpx.AsyncClient(trust_env=False) as c:
                 r = await c.post(f"http://127.0.0.1:{SINK + 1}/v1/chat/completions", json=body)
             return JSONResponse(r.json())
+        if behaviour == "drop_first" and "first private plan" in json.dumps(body):
+            return JSONResponse({"error": "boom"}, status_code=500)  # never forwarded
+        if behaviour == "drop_first":
+            async with httpx.AsyncClient(trust_env=False) as c:
+                r = await c.post(f"http://127.0.0.1:{SINK}/v1/chat/completions", json=body)
+            return JSONResponse(r.json())
         if behaviour == "ping" and "confidential" in json.dumps(body):
             # never forwards the private case: sends something unrelated to the local sink, then fails
             async with httpx.AsyncClient(trust_env=False) as c:
@@ -206,4 +212,12 @@ def test_unrelated_traffic_never_counts_as_a_case_having_run(tmp_path):
     a = {"id": "a", "category": "c", "truth": "private",
          "messages": [{"role": "user", "content": "Our confidential acquisition plan."}]}
     res = _run("ping", tmp_path, [a, _public()])
+    assert not res["valid"] and "a" in res["unrouted_ids"]
+
+
+def test_content_shared_with_another_case_never_proves_a_case_ran(tmp_path):
+    key = {"role": "user", "content": "AKIAIOSFODNN7EXAMPLE"}
+    a = {"id": "a", "category": "c", "truth": "private", "messages": [key, {"role": "user", "content": "the first private plan"}]}
+    b = {"id": "b", "category": "c", "truth": "private", "messages": [key, {"role": "user", "content": "the second private plan"}]}
+    res = _run("drop_first", tmp_path, [a, b, _public("pub")])
     assert not res["valid"] and "a" in res["unrouted_ids"]

@@ -173,7 +173,7 @@ def test_a_tool_call_or_refusal_forwarded_alone_is_found():
          {"role": "assistant", "content": None, "refusal": "I cannot disclose AKIAIOSFODNN7EXAMPLE.", "tool_calls": [
              {"id": "c1", "type": "function", "function": {"name": "push", "arguments": "{\"key\": \"AKIAIOSFODNN7EXAMPLE\"}"}}]}]}
     b = {"id": "b", "truth": "public", "messages": [{"role": "user", "content": "What is the tallest mountain on Earth?"}]}
-    ident, leak = _evidence(*_bodies(a, b))
+    ident, leak, _ = _evidence(*_bodies(a, b))
     carried = json.dumps({"messages": [{"role": "assistant", "content": "earlier: I cannot disclose AKIAIOSFODNN7EXAMPLE."},
                                        b["messages"][0]]})
     assert _contains(leak["a"], _received(carried))
@@ -184,7 +184,7 @@ def test_a_schema_key_is_evidence():
          "tools": [{"type": "function", "function": {"name": "f", "parameters": {"properties": {"AKIAIOSFODNN7EXAMPLE": {}}}}}]}
     b = {"id": "b", "truth": "public", "messages": [{"role": "user", "content": "What is the tallest mountain on Earth?"}],
          "tools": [{"type": "function", "function": {"name": "f", "parameters": {"properties": {"public_field": {}}}}}]}
-    ident, leak = _evidence(*_bodies(a, b))
+    ident, leak, _ = _evidence(*_bodies(a, b))
     assert "AKIAIOSFODNN7EXAMPLE" in leak["a"] and "function" not in leak["a"]
 
 
@@ -194,7 +194,7 @@ def test_text_split_across_two_received_strings_is_not_assembled():
         {"role": "user", "content": "Our confidential acquisition plan."}]}
     b = {"id": "b", "truth": "public", "messages": [{"role": "system", "content": "You are a helpful assistant."},
          {"role": "developer", "content": "Answer concisely."}, {"role": "user", "content": "What is the tallest mountain?"}]}
-    ident, leak = _evidence(*_bodies(a, b))
+    ident, leak, _ = _evidence(*_bodies(a, b))
     assert not _contains(leak["a"], _received(json.dumps(_body(b))))
 
 
@@ -202,7 +202,7 @@ def test_a_string_two_cases_share_identifies_neither():
     shared = {"role": "system", "content": "You are a helpful assistant."}
     a = {"id": "a", "truth": "private", "messages": [shared, {"role": "user", "content": "first private question"}]}
     b = {"id": "b", "truth": "public", "messages": [shared, {"role": "user", "content": "second public question"}]}
-    ident, leak = _evidence(*_bodies(a, b))
+    ident, leak, _ = _evidence(*_bodies(a, b))
     assert shared["content"] not in ident["a"] | ident["b"] | leak["a"]
 
 
@@ -229,3 +229,47 @@ def test_a_long_key_costs_memory_in_proportion():
     peak(100)
     small, big = peak(4000), peak(16000)
     assert big < 6 * small  # 4x the input; the path-copying version grew 16x (248 MiB at 16 k)
+
+
+# review round 13 (Codex's fifth pass): the content-attribution design, attacked
+def test_a_short_string_is_reported_unmeasured_not_silently_ignored():
+    a = {"id": "a", "truth": "private", "messages": [{"role": "user", "content": "7492"},
+                                                      {"role": "user", "content": "This is the confidential vault PIN."}]}
+    b = {"id": "b", "truth": "public", "messages": [{"role": "user", "content": "What is the tallest mountain?"}]}
+    _, _, unmeasured = _evidence(*_bodies(a, b))
+    assert unmeasured["a"] == {"7492"}
+
+
+def test_a_credential_cut_out_of_its_sentence_or_given_as_a_number_is_seen():
+    a = {"id": "a", "truth": "private", "messages": [{"role": "user", "content": "Credential: AKIAIOSFODNN7EXAMPLE."}],
+         "tools": [{"type": "function", "function": {"name": "f", "parameters": {"enum": [4242424242424242]}}}]}
+    b = {"id": "b", "truth": "public", "messages": [{"role": "user", "content": "What is the tallest mountain?"}]}
+    _, leak, _ = _evidence(*_bodies(a, b))
+    assert _contains(leak["a"], _received(json.dumps({"messages": [{"role": "user", "content": "AKIAIOSFODNN7EXAMPLE"}]})))
+    carried = {"messages": b["messages"], "tools": [{"type": "function", "function": {"name": "f",
+                                                                                      "parameters": {"enum": [4242424242424242]}}}]}
+    assert _contains(leak["a"], _received(json.dumps(carried)))
+
+
+def test_api_syntax_a_gateway_adds_is_never_evidence():
+    a = {"id": "a", "truth": "private", "max_tokens": 64,
+         "messages": [{"role": "user", "content": "Our confidential acquisition plan."}]}
+    r = {"id": "r", "truth": "private", "messages": [{"role": "user", "content": "response"}]}
+    b = {"id": "b", "truth": "public", "messages": [{"role": "user", "content": "What is the tallest mountain?"}]}
+    _, leak, _ = _evidence(*_bodies(a, r, b))
+    sent = {"model": "m", "max_tokens": 64, "response_format": {"type": "json_object"}, "messages": b["messages"]}
+    assert not _contains(leak["a"], _received(json.dumps(sent)))
+    assert not _contains(leak["r"], _received(json.dumps(sent)))
+
+
+@pytest.mark.parametrize("cases,match", [
+    ([{"id": "dup", "truth": "private", "messages": [{"role": "user", "content": "one"}]},
+      {"id": "dup", "truth": "private", "messages": [{"role": "user", "content": "two"}]}], "repeated"),
+    ([{"id": "a", "truth": "PRIVATE", "messages": [{"role": "user", "content": "one"}]}], "truth"),
+    ([{"id": "calibration", "truth": "public", "messages": [{"role": "user", "content": "x"}]}], "reserved"),
+])
+def test_a_suite_that_would_change_the_experiment_is_refused(cases, match):
+    from endorouter.leakbench.runner import validate_suite
+
+    with pytest.raises(ValueError, match=match):
+        validate_suite(cases)

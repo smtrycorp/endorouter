@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import base64
 import functools
+import itertools
 import json
 import math
 import re
@@ -364,12 +365,52 @@ class _Undecodable(str):
 MAX_DEPTH = 64
 
 
-def _walk(obj, where: str) -> Iterator[tuple[str, str]]:
-    """Iterative, so no input can exhaust the stack. Structure deeper than MAX_DEPTH cannot be inspected and is reported
-    as undecodable, which the scanner treats as a finding (fail closed)."""
-    stack = [(obj, where, 0)]
+class _Loc:
+    """Where a string sits in the request. Each location holds only its own step and a link to its parent, so the
+    path text is never copied for every value under a long or deep key (that copying made memory grow with the
+    square of the input); the text is built only when a finding is reported."""
+
+    __slots__ = ("parent", "step", "in_json")
+
+    def __init__(self, parent: "_Loc | None", step: str, in_json: bool = False):
+        self.parent, self.step, self.in_json = parent, step, in_json
+
+    def child(self, step: str, into_json: bool = False) -> "_Loc":
+        return _Loc(self, step, self.in_json or into_json)
+
+    def __str__(self) -> str:
+        steps, loc = [], self
+        while loc is not None:
+            steps.append(loc.step if len(loc.step) <= 34 else loc.step[:33] + "…")
+            loc = loc.parent
+        return "".join(reversed(steps))
+
+
+def _children(o, w: _Loc) -> Iterator[tuple[object, _Loc]]:
+    """A container's contents in document order, made one at a time: a dict's key, then its value."""
+    if isinstance(o, dict):
+        for k, v in o.items():
+            if isinstance(k, str):
+                yield k, w.child(".<key>")
+            yield v, w.child(f".{k}")
+    else:
+        for i, v in enumerate(o):
+            yield v, w.child(f"[{i}]")
+
+
+def _walk(obj, where: _Loc) -> Iterator[tuple[_Loc, str]]:
+    """Every string in obj, in document order (the classifier reads this text). Iterative, so no input can exhaust
+    the stack, and lazy: the stack holds one iterator per level of nesting, never a container's every element, so
+    memory follows depth, not size. Structure deeper than MAX_DEPTH cannot be inspected and is reported as
+    undecodable, which the scanner treats as a finding (fail closed)."""
+    stack: list[tuple[Iterator[tuple[object, _Loc]], int]] = [(iter([(obj, where)]), 0)]
     while stack:
-        o, w, depth = stack.pop()
+        it, depth = stack[-1]
+        nxt = next(it, None)
+        if nxt is None:
+            stack.pop()
+            continue
+        o, w = nxt
         if depth > MAX_DEPTH:
             yield w, _Undecodable("")
             continue
@@ -383,10 +424,10 @@ def _walk(obj, where: str) -> Iterator[tuple[str, str]]:
                 except ValueError:
                     decoded = None
                 except RecursionError:
-                    yield f"{w}<json>", _Undecodable("")
+                    yield w.child("<json>", into_json=True), _Undecodable("")
                     continue
                 if isinstance(decoded, (dict, list)):
-                    stack.append((decoded, f"{w}<json>", depth + 1))
+                    stack.append((iter([(decoded, w.child("<json>", into_json=True))]), depth + 1))
         elif isinstance(o, bool) or o is None:
             continue
         elif isinstance(o, int):
@@ -395,29 +436,20 @@ def _walk(obj, where: str) -> Iterator[tuple[str, str]]:
             yield w, repr(o)
             if o.is_integer() and abs(o) < 1e30:  # 4.000000000000512e18 is also the 19-digit integer the model may read
                 yield w, str(int(o))
-        elif isinstance(o, dict):
-            # children pushed in reverse so they come off the stack in document order (the classifier reads this text)
-            for k, v in reversed(list(o.items())):
-                # the key itself is scanned in full (below); in the location it is cut short, or a long key would be
-                # copied into the path of every value under it (quadratic memory)
-                stack.append((v, f"{w}.{k if len(k) <= 32 else k[:32] + '…'}", depth + 1))
-                if isinstance(k, str):
-                    stack.append((k, f"{w}.<key>", depth + 1))
-        elif isinstance(o, list):
-            for i, v in reversed(list(enumerate(o))):
-                stack.append((v, f"{w}[{i}]", depth + 1))
+        elif isinstance(o, (dict, list)):
+            stack.append((_children(o, w), depth + 1))
 
 
 def texts_in_request(body: dict) -> Iterator[tuple[str, str]]:
     """The forwarded text, for readers such as the classifier (undecodable markers left out)."""
-    return ((w, t) for w, t in _texts(body) if not isinstance(t, _Undecodable))
+    return ((str(w), t) for w, t in _texts(body) if not isinstance(t, _Undecodable))
 
 
-def _texts(body: dict) -> Iterator[tuple[str, str]]:
+def _texts(body: dict) -> Iterator[tuple[_Loc, str]]:
     """Every string the upstream model would receive: every field of the body, the model name included. That covers messages of every role, content parts, tool calls and results, tools, stop sequences,
     response_format schemas and the user field, including dict keys and JSON carried inside strings."""
     for k, v in body.items():
-        yield from _walk(v, k)  # includes "model": a pass-through target forwards the client's model name upstream
+        yield from _walk(v, _Loc(None, k))  # includes "model": a pass-through target forwards the client's model name
 
 
 # Key formats for joined text, without word boundaries: at a join seam a key half sits against its neighbour
@@ -449,12 +481,12 @@ def _joined_texts(body: dict) -> Iterator[tuple[str, str]]:
         if isinstance(t, _Undecodable):
             continue
         with_keys.append(t.strip())  # keys and values everywhere: {"parameters": {"AKIA": "IOSFODNN7EXAMPLE"}}
-        if "<json>" in where:
+        if where.in_json:
             decoded_json.append(t.strip())  # keys and values of JSON inside strings: {"AKIA": "IOSFODNN7EXAMPLE"}
-        if where.endswith(".<key>"):
+        if where.step == ".<key>":
             continue
         everything.append(t.strip())
-        if where != "model" and not where.endswith(_STRUCTURAL):
+        if not (where.parent is None and where.step == "model") and where.step not in _STRUCTURAL:
             content.append(t.strip())
     for label, parts in (("request<joined>", content), ("request<joined-all>", everything),
                          ("request<joined-keys>", with_keys), ("json<joined>", decoded_json)):
@@ -462,14 +494,31 @@ def _joined_texts(body: dict) -> Iterator[tuple[str, str]]:
             yield label, "".join(parts)
 
 
+MIN_SCANNED = 6  # the shortest format any rule matches (an email such as a@b.co) has 6 characters
+MAX_FINDINGS_PER_RULE = 16  # the decision needs which rules fired; a request of a million card numbers need not keep a million
+
+
 def scan_request(body: dict, extra: Iterable[tuple[str, str]] = ()) -> list[Finding]:
     found: list[Finding] = []
+    count: dict[str, int] = {}
+
+    def add(rule: str, where) -> None:
+        if count.get(rule, 0) < MAX_FINDINGS_PER_RULE:
+            count[rule] = count.get(rule, 0) + 1
+            found.append(Finding(rule, str(where)))
+
     for where, text in _joined_texts(body):
         t = normalise(text)
-        found.extend(Finding(rule, where) for rule, pat in _JOIN_RULES if pat.search(t))
-    for where, text in list(_texts(body)) + list(extra):
+        for rule, pat in _JOIN_RULES:
+            if pat.search(t):
+                add(rule, where)
+    # one string at a time, never all of them held at once
+    for where, text in itertools.chain(_texts(body), extra):
         if isinstance(text, _Undecodable):
-            found.append(Finding("undecodable_nested_json", where))
+            add("undecodable_nested_json", where)
             continue
-        found.extend(scan_text(text, where))
+        if len(text.strip()) < MIN_SCANNED:
+            continue  # too short to hold any format a rule knows; pieces of a split secret are caught in the joins above
+        for f in scan_text(text, str(where) if isinstance(where, str) else ""):
+            add(f.rule, where)
     return found
