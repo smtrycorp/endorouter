@@ -1,4 +1,4 @@
-"""Regressions for Codex's QC round 3 (2026-09-30): each test reproduces a finding, then pins the fix."""
+"""Regressions for review round 3 (a second reviewer) (2026-09-30): each test reproduces a finding, then pins the fix."""
 
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ from endorouter.config import parse_config
 from endorouter.detectors import scan_request, scan_text
 from endorouter.router import Router
 from endorouter.validate import InvalidRequest
-from tests.test_qc1 import client_for, make_cfg_url
+from tests.test_review_1 import client_for, make_cfg_url
 from tests.test_router import Upstream, make_cfg
 
 AWS = "AKIAIOSFODNN7EXAMPLE"
@@ -156,7 +156,7 @@ def test_leakbench_keeps_case_request_fields():
     assert body["stop"] == AWS and "truth" not in body and "category" not in body
 
 
-# QC round 4 (Antigravity)
+# review round 4
 @pytest.mark.parametrize("cmd,expected", [
     ("/Users/me/vllm-testing/bin/python proxy.py", None),              # directory name is not the program
     ("/usr/bin/python3 -m litellm --port 8000", None),
@@ -177,7 +177,7 @@ def test_discovery_matches_programs_exactly(cmd, expected):
 
 def test_classifier_prompt_fences_the_text_with_a_fresh_boundary(tmp_path):
     from endorouter.classifier import classify
-    from tests.test_qc1 import _balanced
+    from tests.test_review_1 import _balanced
 
     seen = []
 
@@ -193,7 +193,7 @@ def test_classifier_prompt_fences_the_text_with_a_fresh_boundary(tmp_path):
     assert fences[0] != fences[1]
 
 
-# QC round 5
+# review round 5
 def test_every_listener_on_the_port_must_be_the_same_trusted_program(monkeypatch):
     monkeypatch.setattr(discover, "_port_owners", lambda url: ["/usr/local/bin/ollama serve", "/usr/bin/python3 gw.py"])
     assert discover.verified_program("http://127.0.0.1:11434/v1") is None
@@ -278,7 +278,7 @@ def test_models_list_shows_pass_through_targets_with_their_request_form(tmp_path
     assert "openai/*" in ids and "openai" not in ids
 
 
-# QC round 6
+# review round 6
 @pytest.mark.parametrize("text", [
     "creds: " + __import__("base64").b64encode(b"NIMBUS_KEY=nmb_sk_R7tY3wB6zq4f9KxP2mQ8vL1n").decode(),
     'Tool returned: {"k": "\\u0054x9pL2mQ8vK4nR7wZ3yB6cD1"}',
@@ -409,7 +409,7 @@ def test_duplicate_config_keys_and_null_audit_log_are_errors(tmp_path):
         load_config(f)
 
 
-# QC round 8
+# review round 8
 def test_classifier_send_is_skipped_when_its_verified_port_changed_hands(monkeypatch, tmp_path):
     cfg = parse_config({"version": 1, "mode": "balanced", "audit_log": str(tmp_path / "a.jsonl"), "targets": {
         "ollama": {"url": "http://local.test:11434/v1", "model": "m", "location": "local", "verify_program": "ollama"},
@@ -455,7 +455,7 @@ def test_a_process_titled_like_ollama_is_judged_by_its_executable():
     assert discover._program("/usr/local/bin/ollama\0/usr/local/bin/ollama serve") == "ollama"
 
 
-# QC round 9
+# review round 9
 @pytest.mark.parametrize("text", [
     '{"db_password": "Xk9!pQ2#vL7$mR4&z*r(p9)w1%t6b3j5-h"}',
     '"DB_PASSWORD=Xk9!pQ2#vL7$mR4&",',

@@ -1,4 +1,4 @@
-"""Regressions for the 2026-09-30 external review (QC round 1). Each test reproduces a finding, then pins the fix."""
+"""Regressions for the 2026-09-30 external review (review round 1). Each test reproduces a finding, then pins the fix."""
 
 from __future__ import annotations
 

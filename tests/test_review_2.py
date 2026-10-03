@@ -1,4 +1,4 @@
-"""Regressions for QC round 2 (two external reviewers, 2026-09-30). Each test reproduces a finding, then pins the fix."""
+"""Regressions for review round 2 (two external reviewers, 2026-09-30). Each test reproduces a finding, then pins the fix."""
 
 from __future__ import annotations
 
@@ -16,7 +16,7 @@ from endorouter.config import parse_config
 from endorouter.detectors import scan_request, scan_text, texts_in_request
 from endorouter.router import Router
 from endorouter.server import create_app
-from tests.test_qc1 import _answering, _balanced, client_for, make_cfg_url
+from tests.test_review_1 import _answering, _balanced, client_for, make_cfg_url
 from tests.test_router import Upstream, make_cfg
 
 B64_KEY = "QUtJQUlPU0ZPRE5ON0VYQU1QTEU="  # base64 of the AWS example key

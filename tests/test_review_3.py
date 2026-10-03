@@ -1,4 +1,4 @@
-"""Regressions for QC round 3 and the harder leakbench suite (2026-09-30)."""
+"""Regressions for review round 3 and the harder leakbench suite (2026-09-30)."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ import pytest
 
 from endorouter.classifier import PROMPT
 from endorouter.detectors import scan_request, scan_text
-from tests.test_qc1 import client_for
+from tests.test_review_1 import client_for
 from tests.test_router import Upstream
 
 
