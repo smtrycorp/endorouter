@@ -1,0 +1,136 @@
+{
+  "valid": true,
+  "problems": [],
+  "unrouted_ids": [],
+  "unobserved_ids": [],
+  "gateway": "http://127.0.0.1:8797/v1",
+  "cases": 9,
+  "private_cases": 7,
+  "leaks": 0,
+  "leak_rate": "0/7",
+  "refused": 0,
+  "refusals_verified": false,
+  "public_cases": 2,
+  "over_restricted": "0/2",
+  "leaked_ids": [],
+  "by_category": {
+    "personal_data": {
+      "cases": 1,
+      "leaked": 0,
+      "over_restricted": 0
+    },
+    "private_key": {
+      "cases": 1,
+      "leaked": 0,
+      "over_restricted": 0
+    },
+    "public_labeled": {
+      "cases": 2,
+      "leaked": 0,
+      "over_restricted": 0
+    },
+    "secret_in_history": {
+      "cases": 1,
+      "leaked": 0,
+      "over_restricted": 0
+    },
+    "secret_in_tool_result": {
+      "cases": 1,
+      "leaked": 0,
+      "over_restricted": 0
+    },
+    "secret_latest": {
+      "cases": 2,
+      "leaked": 0,
+      "over_restricted": 0
+    },
+    "secret_shape": {
+      "cases": 1,
+      "leaked": 0,
+      "over_restricted": 0
+    }
+  },
+  "rows": [
+    {
+      "id": "pub-label-aws",
+      "category": "secret_latest",
+      "truth": "private",
+      "marker": "lbkxfbhjsaoegxzfziryqiwkwhx",
+      "status": 200,
+      "answered_by": "local",
+      "reached": "local"
+    },
+    {
+      "id": "pub-label-unknown-vendor",
+      "category": "secret_shape",
+      "truth": "private",
+      "marker": "lbkjxabjipnqzwrenwtnryoyuof",
+      "status": 200,
+      "answered_by": "local",
+      "reached": "local"
+    },
+    {
+      "id": "pub-label-card",
+      "category": "personal_data",
+      "truth": "private",
+      "marker": "lbkwbwsvpjudjvimdrebtxppary",
+      "status": 200,
+      "answered_by": "local",
+      "reached": "local"
+    },
+    {
+      "id": "pub-label-history",
+      "category": "secret_in_history",
+      "truth": "private",
+      "marker": "lbkimhqzskyqcqjfnktluiclrzy",
+      "status": 200,
+      "answered_by": "local",
+      "reached": "local"
+    },
+    {
+      "id": "pub-label-tool-result",
+      "category": "secret_in_tool_result",
+      "truth": "private",
+      "marker": "lbkrbrebwtnunfwlkghhgrbtcvb",
+      "status": 200,
+      "answered_by": "local",
+      "reached": "local"
+    },
+    {
+      "id": "pub-source-pkey",
+      "category": "private_key",
+      "truth": "private",
+      "marker": "lbkmsqhrnktscejeysogjscofua",
+      "status": 200,
+      "answered_by": "local",
+      "reached": "local"
+    },
+    {
+      "id": "pub-label-stream-dburl",
+      "category": "secret_latest",
+      "truth": "private",
+      "marker": "lbkkzhhjbiwkyvigkpxozkaoqil",
+      "status": 200,
+      "answered_by": "local",
+      "reached": "local"
+    },
+    {
+      "id": "pub-label-question",
+      "category": "public_labeled",
+      "truth": "public",
+      "marker": "lbkymswdzhzlnvmmjhflsmmynzl",
+      "status": 200,
+      "answered_by": "cloud",
+      "reached": "cloud"
+    },
+    {
+      "id": "pub-source-question",
+      "category": "public_labeled",
+      "truth": "public",
+      "marker": "lbktsxzcidyqnmplafvzmfdujul",
+      "status": 200,
+      "answered_by": "cloud",
+      "reached": "cloud"
+    }
+  ]
+}

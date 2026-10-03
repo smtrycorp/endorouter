@@ -1,4 +1,4 @@
-# leakbench results, 2026-09-30 (final run on the code after nine review rounds)
+# leakbench results, 2026-10-02 (run on the code after the launch review)
 
 29 cases: 24 private, 5 public. Every result is measured at the recording sinks.
 
@@ -8,11 +8,11 @@
 |---|---|---|
 | EndoRouter 0.1, strict, with provenance headers | 0 of 24 | 3 of 5 |
 | EndoRouter 0.1, strict, no provenance headers | 0 of 24 | 5 of 5 |
-| EndoRouter 0.1, balanced, local 30B classifier | 0 of 24 | 1 of 5 (0 or 1 across runs) |
+| EndoRouter 0.1, balanced, local 30B classifier | 0 of 24 | 0 of 5 (0 or 1 across runs) |
 | LiteLLM 1.103.1, content filter on every request | 13 of 24 | 0 of 5 |
 | Pass-through control (cloud declared local) | 24 of 24 | 0 of 5 |
 
-All five runs are valid. In each, the calibration request reached a sink, every case reached a sink or was refused, and every answer came from a recording sink. All 11 LiteLLM refusals were its content filter reporting a matched pattern, and the reports keep each refusal message. A refusal is still the gateway's own claim, so leakbench reports refusals separately and marks them unverified. Counting them as safe favours LiteLLM.
+All five runs are valid. In each, the calibration request reached a sink, every case reached a sink or was refused, every answer came from a recording sink, and no request reached a sink outside the case it belonged to. Since 2026-10-02, leakbench attributes every request a sink receives to the case in flight and puts the case's marker in every message, so a gateway that sends only part of a conversation to the cloud counts as leaking. The numbers did not change under that stricter scoring. All 11 LiteLLM refusals were its content filter reporting a matched pattern, and the reports keep each refusal message. A refusal is still the gateway's own claim, so leakbench reports refusals separately and marks them unverified. Counting them as safe favours LiteLLM.
 
 ## By category
 
@@ -73,6 +73,18 @@ In balanced mode, unlabelled work may go to the cloud when no detector fires and
 The three unknown-vendor keys are caught by a rule with no vendor list, described in the README. While adding it we found that leakbench's own random hex markers looked like secrets to that rule, which made 6 public cases look private. Markers are now random lowercase letters, and a test checks that no marker trips a detector.
 
 The suite is still small, and it was written by the same authors as the router.
+
+## The boundary suite
+
+The strict-mode zero above holds by construction: unlabelled work never goes to the cloud, so an unlabelled private case stays local whether or not any detector fires. `cases-boundary.jsonl` tests where the detectors actually decide. Its 7 private cases carry a public label or a public source, as a client that labels everything public would send them, with a secret inside: an AWS key, an unknown vendor's key, a card number, a token in earlier history, a Django key in a tool result, a private key under a public source path, and a database URL in a streaming request. 2 public cases check that a public label still reaches the cloud.
+
+| Gateway | Private cases that reached the cloud | Public cases kept off the cloud |
+|---|---|---|
+| EndoRouter, strict | 0 of 7 | 0 of 2 |
+| EndoRouter, balanced | 0 of 7 | 0 of 2 |
+| LiteLLM 1.103.1, content filter | 3 of 7 (unknown vendor's key, Django key in a tool result, private key) | 0 of 2 |
+
+LiteLLM receives no provenance headers, so for it these are ordinary requests; its 4 refusals were its content filter. Seven cases is a small suite, and the detectors' wider measured rates are in the README.
 
 ## How LiteLLM was configured
 
