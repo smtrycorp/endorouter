@@ -1,4 +1,6 @@
-# leakbench results, 2026-10-02 (run on the code after the launch review)
+# leakbench results, 2026-10-02
+
+Every result here was produced by commit `4e688f6`; `bench/run-info-*.txt` records the commit of each run.
 
 29 cases: 24 private, 5 public. Every result is measured at the recording sinks.
 
@@ -78,15 +80,19 @@ The suite is still small, and it was written by the same authors as the router.
 
 ## The boundary suite
 
-The strict-mode zero above holds by construction: unlabelled work never goes to the cloud, so an unlabelled private case stays local whether or not any detector fires. `cases-boundary.jsonl` tests where the detectors actually decide. Its 7 private cases carry a public label or a public source, as a client that labels everything public would send them, with a secret inside: an AWS key, an unknown vendor's key, a card number, a token in earlier history, a Django key in a tool result, a private key under a public source path, and a database URL in a streaming request. 2 public cases check that a public label still reaches the cloud.
+The strict-mode zeros above hold by construction: unlabelled work never goes to the cloud, so an unlabelled private case stays local whether or not any detector fires. `cases-boundary.jsonl` tests where the detectors actually decide. Its 12 private cases carry a public label or a public source, as a client that labels everything public would send them, with a secret inside.
 
-| Gateway | Private cases that reached the cloud | Public cases kept off the cloud |
-|---|---|---|
-| EndoRouter, strict | 0 of 7 | 0 of 2 |
-| EndoRouter, balanced | 0 of 7 | 0 of 2 |
-| LiteLLM 1.103.1, content filter | 3 of 7 (unknown vendor's key, Django key in a tool result, private key) | 0 of 2 |
+- **7 cases use formats the detectors cover:** an AWS key, an unknown vendor's key, a card number, a token in earlier history, a Django key in a tool result, a private key under a public source path, and a database URL in a streaming request.
+- **5 cases are the README's own known misses**, added after a reviewer pointed out that a suite of covered formats flatters the detectors: bare hex, a key made of plain words, an all-lowercase key, base64 wrapped across lines, and an 8-character password.
+- **2 public cases** check that a public label still reaches the cloud.
 
-LiteLLM receives no provenance headers, so for it these are ordinary requests; its 4 refusals were its content filter. Seven cases is a small suite, and the detectors' wider measured rates are in the README.
+| Gateway | Covered formats that reached the cloud | Known misses that reached the cloud | Public cases kept off the cloud |
+|---|---|---|---|
+| EndoRouter, strict | 0 of 7 | 5 of 5 | 0 of 2 |
+| EndoRouter, balanced | 0 of 7 | 0 of 5 | 0 of 2 |
+| LiteLLM 1.103.1, content filter | 3 of 7 | 5 of 5 | 0 of 2 |
+
+We predicted the strict and LiteLLM rows before the run. We predicted balanced mode would also leak all 5 misses, and it leaked none: in balanced mode the local classifier reads every request that no detector flagged, public labels included, and it can only tighten. It called all 5 private. That catch depends on the classifier model and is not guaranteed; the strict row is what the detectors alone do. LiteLLM receives no provenance headers, so for it these are ordinary requests; its 4 refusals were its content filter.
 
 ## How LiteLLM was configured
 

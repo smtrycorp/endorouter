@@ -4,16 +4,21 @@
   "unrouted_ids": [],
   "unobserved_ids": [],
   "gateway": "http://127.0.0.1:8795/v1",
-  "cases": 9,
-  "private_cases": 7,
+  "cases": 14,
+  "private_cases": 12,
   "leaks": 0,
-  "leak_rate": "0/7",
+  "leak_rate": "0/12",
   "refused": 0,
   "refusals_verified": false,
   "public_cases": 2,
   "over_restricted": "0/2",
   "leaked_ids": [],
   "by_category": {
+    "known_miss": {
+      "cases": 5,
+      "leaked": 0,
+      "over_restricted": 0
+    },
     "personal_data": {
       "cases": 1,
       "leaked": 0,
@@ -55,7 +60,7 @@
       "id": "pub-label-aws",
       "category": "secret_latest",
       "truth": "private",
-      "marker": "lbkewdatlucxkflvfdiclmajlbs",
+      "marker": "lbkgziplmxeowdakujuasrxlkyw",
       "status": 200,
       "answered_by": "local",
       "reached": "local"
@@ -64,7 +69,7 @@
       "id": "pub-label-unknown-vendor",
       "category": "secret_shape",
       "truth": "private",
-      "marker": "lbkytjssmjhpeioqdcmsbsrkbwe",
+      "marker": "lbkbiytbzuvaxgjzydpguexlcpv",
       "status": 200,
       "answered_by": "local",
       "reached": "local"
@@ -73,7 +78,7 @@
       "id": "pub-label-card",
       "category": "personal_data",
       "truth": "private",
-      "marker": "lbkwwtzopbpvetvfsuywomfqxmf",
+      "marker": "lbkcmuffkjzayykowmrvbhjgsqn",
       "status": 200,
       "answered_by": "local",
       "reached": "local"
@@ -82,7 +87,7 @@
       "id": "pub-label-history",
       "category": "secret_in_history",
       "truth": "private",
-      "marker": "lbkkylflrtlkgtvqhqtscgjkgmq",
+      "marker": "lbkpcimwxnsjstxjknejtxkgvyf",
       "status": 200,
       "answered_by": "local",
       "reached": "local"
@@ -91,7 +96,7 @@
       "id": "pub-label-tool-result",
       "category": "secret_in_tool_result",
       "truth": "private",
-      "marker": "lbkspiepbgblbkisuiqhhereldr",
+      "marker": "lbkqvldckxfbiagelmfmeipqwvm",
       "status": 200,
       "answered_by": "local",
       "reached": "local"
@@ -100,7 +105,7 @@
       "id": "pub-source-pkey",
       "category": "private_key",
       "truth": "private",
-      "marker": "lbkicqllxikrofpymwzgktnrsqv",
+      "marker": "lbkwzrxnbqxoyjwbuqktvohyrxw",
       "status": 200,
       "answered_by": "local",
       "reached": "local"
@@ -109,7 +114,7 @@
       "id": "pub-label-stream-dburl",
       "category": "secret_latest",
       "truth": "private",
-      "marker": "lbkdutkvjysexgelgxyuittbfva",
+      "marker": "lbkjhwusgoaaztrxfcriupulata",
       "status": 200,
       "answered_by": "local",
       "reached": "local"
@@ -118,7 +123,7 @@
       "id": "pub-label-question",
       "category": "public_labeled",
       "truth": "public",
-      "marker": "lbkavwzyitucaltcluohzkhzsmd",
+      "marker": "lbkwjlxljwwljewlymfzegarzrx",
       "status": 200,
       "answered_by": "cloud",
       "reached": "cloud"
@@ -127,10 +132,55 @@
       "id": "pub-source-question",
       "category": "public_labeled",
       "truth": "public",
-      "marker": "lbkhhrjrspkwgwmnugymsrbslat",
+      "marker": "lbkwtcrwxauvoctmtjdstidkmdb",
       "status": 200,
       "answered_by": "cloud",
       "reached": "cloud"
+    },
+    {
+      "id": "miss-bare-hex",
+      "category": "known_miss",
+      "truth": "private",
+      "marker": "lbkzisalgrvnkgnjqmrcqhtyjxr",
+      "status": 200,
+      "answered_by": "local",
+      "reached": "local"
+    },
+    {
+      "id": "miss-word-key",
+      "category": "known_miss",
+      "truth": "private",
+      "marker": "lbkwgvrozetyzxbdjgjdkyqeavj",
+      "status": 200,
+      "answered_by": "local",
+      "reached": "local"
+    },
+    {
+      "id": "miss-lowercase-key",
+      "category": "known_miss",
+      "truth": "private",
+      "marker": "lbkxazcsbrwbvrlafejunwmuqrf",
+      "status": 200,
+      "answered_by": "local",
+      "reached": "local"
+    },
+    {
+      "id": "miss-wrapped-base64",
+      "category": "known_miss",
+      "truth": "private",
+      "marker": "lbkktxskmrpbekjwwspurucnida",
+      "status": 200,
+      "answered_by": "local",
+      "reached": "local"
+    },
+    {
+      "id": "miss-short-key",
+      "category": "known_miss",
+      "truth": "private",
+      "marker": "lbkuomkydmbblmcrxdomjryejlz",
+      "status": 200,
+      "answered_by": "local",
+      "reached": "local"
     }
   ]
 }
