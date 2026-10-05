@@ -15,7 +15,7 @@ It speaks the OpenAI chat completions API for text chat, so a client that lets y
 
 ## Quickstart
 
-You need Python 3.10 or newer on macOS or Linux, `lsof` (installed by default on macOS), and a local model server that is already running, such as Ollama.
+You need Python 3.10 or newer on macOS, Linux or Windows, and a local model server that is already running, such as Ollama.
 
 ```
 pip install endorouter
@@ -35,7 +35,7 @@ There are no questions and no config file. On start the router does three things
 - **It adds cloud providers only if their key is already set.** Examples are `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, `MISTRAL_API_KEY`, `GROQ_API_KEY` and `OPENROUTER_API_KEY`. A client asks for a cloud model as `openai/gpt-5`, and gets it only for work labelled public.
 - **It protects standard secret files.** Examples are `.env`, `*.pem`, SSH keys, `.aws/credentials` and `.netrc`. It runs in strict mode, so anything unlabelled stays local.
 
-On Linux, Ollama usually runs as a system service under its own user, and discovery cannot see which program owns a port another user runs. Trust it once by name, and the router writes that into its config: `endorouter init --trust ollama`, then `endorouter serve`. A target trusted this way is taken at your word: the router cannot check which program owns its port, though it still asks Ollama before every send whether the model runs on this machine.
+On Linux, Ollama usually runs as a system service under its own user, and discovery cannot see which program owns a port another user runs (on every platform, a process the router cannot read gives no verdict). Trust it once by name, and the router writes that into its config: `endorouter init --trust ollama`, then `endorouter serve`. A target trusted this way is taken at your word: the router cannot check which program owns its port, though it still asks Ollama before every send whether the model runs on this machine.
 
 To see or change what it found, write it to a file:
 
@@ -126,6 +126,6 @@ Results are in [bench/RESULTS.md](bench/RESULTS.md), with the commands to reprod
 
 ## Status
 
-Version 0.1, pre-release. macOS and Linux. Text chat completions, with and without streaming. Not yet supported: images, audio, embeddings and the Responses API. Requests that use them are refused rather than passed through. Known gap: base64 wrapped across lines (as in PEM or MIME bodies) is not reassembled before decoding.
+Version 0.1, pre-release. macOS and Linux; Windows runs the same code with two differences. The port-owner check reads the process table through psutil on every platform, and on Windows it has been exercised in CI only against a stand-in process, never against Ollama, LM Studio or another real local server: Ollama and KoboldCpp are recognised by their executable names (`ollama.exe`, `koboldcpp.exe`), LM Studio is not, so trust it yourself with `endorouter init --trust lmstudio=<model>`. The audit log cannot be made owner-only on Windows, where a file takes its folder's access list; the default location, `%LOCALAPPDATA%\endorouter\audit.jsonl`, is in a folder private to your account, and `endorouter doctor` reminds you to keep it in one. Text chat completions, with and without streaming. Not yet supported: images, audio, embeddings and the Responses API. Requests that use them are refused rather than passed through. Known gap: base64 wrapped across lines (as in PEM or MIME bodies) is not reassembled before decoding.
 
 Built by Jacob Ashley with Claude. Licence: [Apache-2.0](LICENSE), copyright 2026 J. I. Ashley Consulting LLC. Security reports: see [SECURITY.md](SECURITY.md). Contact: hello@smtry.ai.
