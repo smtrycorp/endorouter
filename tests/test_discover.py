@@ -200,6 +200,7 @@ def test_an_executable_other_users_can_write_is_not_verified(tmp_path, monkeypat
     assert discover.verified_program(URL) is None
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="a running image cannot be deleted on Windows, and no mode bits are read")
 def test_an_installed_executable_that_was_deleted_is_not_verified(tmp_path, monkeypatch):
     ollama = installed(tmp_path, monkeypatch)
     Path(ollama.exe).unlink()
