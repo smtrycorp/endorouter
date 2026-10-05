@@ -208,7 +208,9 @@ class Router:
                                                 timeout=target.timeout_s)
                 # explicit per call: an injected client configured to follow redirects must not carry a body elsewhere
                 resp = await self.client.send(req, stream=stream, follow_redirects=False)
-            except httpx.HTTPError as e:
+            except (httpx.HTTPError, httpx.InvalidURL) as e:
+                # InvalidURL: a Config built in code, not parsed, can hold a URL the client cannot represent; that
+                # target is unusable, like one that refuses the connection, and never a 500
                 attempts.append({"target": target.name, "error": type(e).__name__, "ms": int((time.monotonic() - t0) * 1000)})
                 continue
             if resp.status_code in RETRYABLE or 300 <= resp.status_code < 400:
@@ -239,7 +241,7 @@ class Router:
             # explicit per call, as for every send: a redirect must not carry the model's name to another host
             r = await self.client.send(req, follow_redirects=False)
             info = r.json()
-        except (httpx.HTTPError, ValueError):
+        except (httpx.HTTPError, httpx.InvalidURL, ValueError):
             return "could not confirm the model runs on this machine"
         return f"model {target.model} is hosted remotely" if remote_from_show(r.status_code, info) else None
 

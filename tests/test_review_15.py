@@ -5,16 +5,22 @@ represent is a configuration error."""
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import sys
 from pathlib import Path, PurePosixPath, PureWindowsPath
 
+import httpx
 import psutil
 import pytest
+from starlette.testclient import TestClient
 
 from endorouter import audit, discover
 from endorouter.audit import TAIL, AuditLog
+from endorouter.config import Config, ConfigError, Target, parse_config
+from endorouter.router import Router, UpstreamFailed
+from endorouter.server import create_app
 from tests.test_discover import (
     LOCALAPPDATA,
     NETSTAT,
@@ -195,3 +201,29 @@ def test_a_record_longer_than_the_window_gets_the_repair_and_a_whole_file_in_the
     path.write_bytes(json.dumps({"pad": "x" * (TAIL - 100)}).encode() + b"\n")
     AuditLog(str(path)).write({"event": "next"})
     assert [json.loads(x).get("event") for x in path.read_bytes().split(b"\n")[:2]] == [None, "next"]
+
+
+BAD_URLS = ["http://127.0.0.1:11434/v1\n", "http://127.0.0.1:11434/v\x001", "http://[v1.fe80::a]:11434/v1"]
+
+
+@pytest.mark.parametrize("url", BAD_URLS)
+def test_a_url_the_http_client_cannot_represent_is_a_config_error(url):
+    """urlsplit took these; httpx raised InvalidURL at dispatch, which was a 500 with nothing sent."""
+    with pytest.raises(ConfigError):
+        parse_config({"version": 1, "targets": {"t": {"url": url, "model": "m", "location": "local"}}})
+
+
+@pytest.mark.parametrize("url", BAD_URLS)
+def test_a_target_url_the_client_refuses_at_dispatch_is_a_failed_target_not_a_crash(tmp_path, url):
+    """A Config built in code is not parsed, so dispatch still meets such a URL: the target fails like one that is down,
+    and the HTTP caller is told every permitted target failed."""
+    cfg = Config(targets=(Target(name="t", url=url, model="m", location="local"),), audit_log=str(tmp_path / "a.jsonl"))
+    client = httpx.AsyncClient(transport=httpx.MockTransport(lambda req: httpx.Response(200, json={})), trust_env=False)
+    router = Router(cfg, client=client)
+    body = {"model": "auto", "messages": [{"role": "user", "content": "hi"}]}
+    with pytest.raises(UpstreamFailed) as e:
+        asyncio.run(router.route(body))
+    assert e.value.attempts == [{"target": "t", "error": "InvalidURL", "ms": e.value.attempts[0]["ms"]}]
+    c = TestClient(create_app(cfg, router), base_url="http://127.0.0.1", client=("127.0.0.1", 5000))
+    r = c.post("/v1/chat/completions", json=body)
+    assert r.status_code == 502 and r.json()["error"]["attempts"][0]["error"] == "InvalidURL"
