@@ -5,6 +5,7 @@ redirect and is reported when it left, and the audit repair judges the last line
 
 from __future__ import annotations
 
+import json
 import os
 import subprocess
 import sys
@@ -13,6 +14,7 @@ from pathlib import Path
 import pytest
 
 from endorouter import discover
+from endorouter.audit import AuditLog
 from endorouter.config import ConfigError, Target, parse_config
 from tests.test_discover import (
     NETSTAT,
@@ -271,3 +273,29 @@ def test_verify_target_never_raises():
     assert discover.verify_target(t) == "no longer served by ollama"
 
 
+def test_a_repair_interrupted_after_its_newline_still_gets_the_marker(tmp_path):
+    """The torn line then ends in a newline, which the last byte alone would call clean."""
+    path = tmp_path / "a.jsonl"
+    path.write_bytes(b'{"event"\n')
+    AuditLog(str(path)).write({"event": "next"})
+    lines = path.read_text().splitlines()
+    assert lines[0] == '{"event"'
+    assert json.loads(lines[1])["event"] == "audit_repaired"
+    assert json.loads(lines[2])["event"] == "next" and len(lines) == 3
+
+
+def test_every_interruption_point_of_a_repair_leaves_the_next_record_whole(tmp_path):
+    path = tmp_path / "a.jsonl"
+    torn = b'{"event":"attempt","request_id":"a'
+    path.write_bytes(torn)
+    log = AuditLog(str(path))
+    log.write({"event": "b"})
+    repair_and_record = path.read_bytes()[len(torn):]
+    for cut in range(1, len(repair_and_record)):
+        path.write_bytes(torn + repair_and_record[:cut])
+        log.write({"event": "c"})
+        lines = path.read_bytes().split(b"\n")
+        assert lines[-1] == b"" and b"" not in lines[:-1], cut
+        assert json.loads(lines[-2])["event"] == "c", cut
+        repairs = [x for x in lines[1:-2] if x.startswith(b'{"event":"audit_repaired"') and x.endswith(b"}")]
+        assert repairs and lines[0] == torn, cut

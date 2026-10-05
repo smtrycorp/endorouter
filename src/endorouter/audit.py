@@ -51,17 +51,31 @@ def _line(record: dict) -> bytes:
     return (json.dumps({"ts": round(time.time(), 3), **record}, separators=(",", ":"), sort_keys=True) + "\n").encode("utf-8")
 
 
+TAIL = 65536  # bytes of the file read back to judge its last line; a record is far smaller
+
+
 def _tail_repair(fd: int) -> bytes:
-    """What the next record must be preceded by: nothing when the file is empty or ends in a newline, otherwise a
-    newline and an audit_repaired record, so the partial line a writer that died mid-record left behind stays a line
-    of its own instead of becoming the head of the next record."""
+    """What the next record must be preceded by: nothing when the file is empty or its last line is a complete record
+    ending in a newline, otherwise an audit_repaired record (on a line of its own), so the partial line a writer that
+    died mid-record left behind stays a line of its own instead of becoming the head of the next record. The last
+    line is parsed, not just its last byte: a writer that died right after the repair's own newline leaves a torn line
+    that does end in one. A last line longer than TAIL is not judged, and gets the repair."""
     size = os.fstat(fd).st_size
     if size == 0:
         return b""
-    os.lseek(fd, size - 1, os.SEEK_SET)
-    if os.read(fd, 1) == b"\n":
+    os.lseek(fd, max(size - TAIL, 0), os.SEEK_SET)
+    tail = os.read(fd, TAIL)
+    last = tail.rstrip(b"\n").rsplit(b"\n", 1)[-1]
+    if tail.endswith(b"\n") and (size <= TAIL or b"\n" in tail[:-1]) and _is_record(last):
         return b""
-    return b"\n" + _line({"event": "audit_repaired"})
+    return (b"" if tail.endswith(b"\n") else b"\n") + _line({"event": "audit_repaired"})
+
+
+def _is_record(line: bytes) -> bool:
+    try:
+        return isinstance(json.loads(line), dict)
+    except ValueError:
+        return False
 
 
 class AuditLog:
