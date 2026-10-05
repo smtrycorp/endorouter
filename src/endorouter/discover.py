@@ -97,7 +97,7 @@ ADMIN_GID = 80  # macOS: members of admin may run anything as root with sudo, so
 # process paths are in the syntax of the machine the process runs on; tests set these to judge another platform
 _HostPath = PureWindowsPath if sys.platform == "win32" else PurePosixPath
 _INSTALLS = INSTALLS.get(sys.platform, {})
-_stat = os.stat
+_stat, _lstat = os.stat, os.lstat
 
 
 def _basename(path: str) -> str:
@@ -137,19 +137,58 @@ def _linked(canonical: str) -> str | None:
         if not _named(canonical, program):
             continue
         for folder in folders:
-            try:
-                if os.path.realpath(os.path.join(os.path.expandvars(folder), name), strict=True) == canonical:
-                    return program
-            except OSError:  # no such file there
-                continue
+            if _leads_to(os.path.join(os.path.expandvars(folder), name)) == canonical:
+                return program
     return None
+
+
+MAX_LINKS = 40  # the kernel's own limit on a chain of symlinks
+
+
+def _leads_to(path: str) -> str | None:
+    """The canonical file an install-folder entry leads to, or None. On Unix every symlink on the way, and the directory
+    holding it, must belong to root or this user and be writable by nobody else, like the destination: a link another
+    user can replace points wherever that user likes, and the destination's own checks would never see that. A link's
+    mode is not read (Linux gives every link 0777); its owner, and the directory's, decide who can replace it. On
+    Windows nothing is checked: see _program."""
+    if sys.platform == "win32":
+        try:
+            return os.path.realpath(path, strict=True)
+        except OSError:
+            return None
+    me = os.getuid()
+    resolved, rest, links = "/", path.split("/"), 0
+    while rest:
+        part = rest.pop(0)
+        if part in ("", "."):
+            continue
+        if part == "..":
+            resolved = os.path.dirname(resolved)
+            continue
+        here = os.path.join(resolved, part)
+        try:
+            st = _lstat(here)
+        except OSError:  # nothing there, or no leave to look
+            return None
+        if not stat.S_ISLNK(st.st_mode):
+            resolved = here
+            continue
+        links += 1
+        if links > MAX_LINKS or st.st_uid not in (0, me) or not _nobody_else_writes(resolved):
+            return None
+        target = os.readlink(here)
+        if target.startswith("/"):
+            resolved = "/"
+        rest = target.split("/") + rest
+    return resolved
 
 
 def _nobody_else_writes(path: str) -> bool:
     """The file and every directory above it belong to root or to this user, and no other user may write any of them:
     a writable directory lets its entries be replaced, whatever the file's own mode says. A sticky world-writable
-    directory (/tmp) is allowed, since only an entry's owner can remove or rename it there. On macOS the admin group
-    counts as root (see ADMIN_GID); /Applications and Homebrew's folders are admin-writable by default."""
+    directory (/tmp) is allowed, since only an entry's owner can remove or rename it there. On macOS a directory the
+    admin group may write is allowed (see ADMIN_GID): /Applications and Homebrew's folders are admin-writable by
+    default. Not a file: a process of another admin account need not be elevated to write through the group bit."""
     me = os.getuid()
     p = Path(path)
     for node in (p, *p.parents):
@@ -159,8 +198,8 @@ def _nobody_else_writes(path: str) -> bool:
             return False
         if st.st_uid not in (0, me):
             return False
-        others = 0o002 if sys.platform == "darwin" and st.st_gid == ADMIN_GID else 0o022
-        if st.st_mode & others and not (st.st_mode & stat.S_ISVTX and stat.S_ISDIR(st.st_mode)):
+        admin = sys.platform == "darwin" and st.st_gid == ADMIN_GID and stat.S_ISDIR(st.st_mode)
+        if st.st_mode & (0o002 if admin else 0o022) and not (st.st_mode & stat.S_ISVTX and stat.S_ISDIR(st.st_mode)):
             return False
     return True
 
