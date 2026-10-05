@@ -217,10 +217,12 @@ class Router:
         self.audit.write({"event": "failed", "request_id": request_id, "attempts": attempts})
         raise UpstreamFailed(request_id, attempts)
 
-    async def _ollama_model_remote(self, target: Target) -> str | None:
-        """Ollama can start serving a hosted model under a name that was local at setup; ask it again each time."""
+    async def _ollama_model_remote(self, target: Target, request_id: str) -> str | None:
+        """Ollama can start serving a hosted model under a name that was local at setup; ask it again each time. The
+        question carries the model's name to the port, so like every send it is on disk first."""
         if "cloud" in target.model.lower():
             return f"model {target.model} is hosted remotely"
+        self.audit.write({"event": "probe", "request_id": request_id, "target": target.name, "model": target.model})
         try:
             r = await self.client.post(ollama_show_url(target.url), json={"model": target.model})
             info = r.json()
@@ -233,7 +235,7 @@ class Router:
         remotely, is refused on the next request. The process table is read in a worker thread so other requests continue."""
         reason = await asyncio.to_thread(verify_target, target)
         if reason is None and (target.ollama_api or target.verify_program == "ollama"):
-            reason = await self._ollama_model_remote(target)
+            reason = await self._ollama_model_remote(target, request_id)
         if reason is None:
             return True
         self.audit.write({"event": "target_unverified", "request_id": request_id, "target": target.name, "reason": reason})
