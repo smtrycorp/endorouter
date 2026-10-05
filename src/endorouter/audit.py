@@ -38,12 +38,30 @@ else:
         fcntl.flock(fd, fcntl.LOCK_UN)
 
 
-# without O_BINARY the Windows C runtime turns the record's "\n" into "\r\n"; it does not exist elsewhere
-OPEN_FLAGS = os.O_WRONLY | os.O_APPEND | os.O_CREAT | getattr(os, "O_BINARY", 0)
+# read as well as append, to inspect the tail; without O_BINARY the Windows C runtime turns the record's "\n" into
+# "\r\n"; it does not exist elsewhere
+OPEN_FLAGS = os.O_RDWR | os.O_APPEND | os.O_CREAT | getattr(os, "O_BINARY", 0)
 
 
 class AuditError(RuntimeError):
     pass
+
+
+def _line(record: dict) -> bytes:
+    return (json.dumps({"ts": round(time.time(), 3), **record}, separators=(",", ":"), sort_keys=True) + "\n").encode("utf-8")
+
+
+def _tail_repair(fd: int) -> bytes:
+    """What the next record must be preceded by: nothing when the file is empty or ends in a newline, otherwise a
+    newline and an audit_repaired record, so the partial line a writer that died mid-record left behind stays a line
+    of its own instead of becoming the head of the next record."""
+    size = os.fstat(fd).st_size
+    if size == 0:
+        return b""
+    os.lseek(fd, size - 1, os.SEEK_SET)
+    if os.read(fd, 1) == b"\n":
+        return b""
+    return b"\n" + _line({"event": "audit_repaired"})
 
 
 class AuditLog:
@@ -52,7 +70,7 @@ class AuditLog:
         self._lock = threading.Lock()
 
     def write(self, record: dict) -> None:
-        line = json.dumps({"ts": round(time.time(), 3), **record}, separators=(",", ":"), sort_keys=True) + "\n"
+        line = _line(record)
         try:
             with self._lock:
                 fd = os.open(self.path, OPEN_FLAGS, 0o600)
@@ -61,7 +79,7 @@ class AuditLog:
                     # separate processes can never interleave the bytes of two records
                     _lock(fd)
                     try:
-                        data = memoryview(line.encode("utf-8"))
+                        data = memoryview(_tail_repair(fd) + line)
                         while data:  # a short write is not a record: keep writing until every byte is accepted
                             n = os.write(fd, data)
                             if n <= 0:
