@@ -237,9 +237,9 @@ def test_macos_an_unbound_socket_row_is_not_a_malformed_one(monkeypatch):
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="the component walk runs on Unix; Windows uses realpath")
+@pytest.mark.skipif(not os.path.isfile("/usr/bin/true"), reason="needs a regular file at a fixed path")
 @pytest.mark.parametrize("path", ["/usr/bin/true/../false", "/usr/bin/true/", "/usr/bin/true/."])
 def test_a_path_through_a_file_leads_nowhere(path):
-    assert os.path.exists("/usr/bin/true")
     assert discover._leads_to(path) is None
 
 
@@ -249,6 +249,7 @@ def test_a_link_that_cannot_be_read_leads_nowhere(tmp_path, monkeypatch):
     target.write_text("")
     link = tmp_path / "entry"
     link.symlink_to(target)
+    assert discover._leads_to(str(link)) == os.path.realpath(target), "the walk must reach readlink at all"
     real = os.readlink
 
     def gone(p, *a, **k):

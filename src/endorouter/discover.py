@@ -328,7 +328,7 @@ def _darwin_holders(port: int) -> set[int] | None:
             return None
         if local_port == "*":  # an unbound socket (netstat -a lists CLOSED ones); it holds no port
             continue
-        if not local_port.isdigit():
+        if not _all_in([local_port], _DIGITS):  # isdigit() would pass Unicode digits that int() refuses
             return None
         if int(local_port) != port:
             continue
