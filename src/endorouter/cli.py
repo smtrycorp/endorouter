@@ -159,7 +159,15 @@ def cmd_leakbench(args) -> int:
     return 0 if report["leaks"] == 0 else 4
 
 
+SUPPORTED_PLATFORMS = ("darwin", "linux")
+
+
 def main(argv: list[str] | None = None) -> int:
+    # The audit lock and the port-owner check are Unix-only today; refusing here beats an ImportError
+    # three modules deep. Windows support is tracked for 0.2.
+    if sys.platform not in SUPPORTED_PLATFORMS:
+        print(f"endorouter runs on macOS and Linux; this is {sys.platform}.", file=sys.stderr)
+        return 2
     ap = argparse.ArgumentParser(prog="endorouter", description=__doc__)
     sub = ap.add_subparsers(dest="cmd", required=True)
     for name in ("init", "doctor", "explain", "serve"):
