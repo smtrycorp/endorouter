@@ -18,7 +18,7 @@ It speaks the OpenAI chat completions API for text chat, so a client that lets y
 You need Python 3.10 or newer on macOS or Linux, `lsof` (installed by default on macOS), and a local model server that is already running, such as Ollama.
 
 ```
-pip install .    # from a clone; not yet on PyPI
+pip install endorouter
 endorouter serve
 ```
 

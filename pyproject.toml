@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "endorouter"
-version = "0.1.0.dev0"
+version = "0.1.0"
 description = "A model router that decides where a prompt is allowed to go before it decides which model is best. Default local; cloud only when provenance says public. Every decision audited."
 readme = "README.md"
 license = "Apache-2.0"
