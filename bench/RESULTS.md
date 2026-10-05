@@ -6,6 +6,8 @@ Every result here was produced by commit `01b54b4`; `bench/run-info-*.txt` recor
 
 ## Summary
 
+The rows say 0.1 because that is the version these runs measured. Release 0.2.0 changed discovery, the audit log, the server's request handling and configuration validation, and no detector, policy or leakbench code (`git diff --name-only v0.1.1..v0.2.0` lists `src/endorouter/{discover,audit,router,server,config,cli}.py` and nothing under `bench/`), so the measurements stand for 0.2 until the next rerun.
+
 | Gateway | Private cases that reached the cloud | Public cases kept off the cloud |
 |---|---|---|
 | EndoRouter 0.1, strict, with provenance headers | 0 of 24 | 3 of 5 |
