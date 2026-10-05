@@ -88,7 +88,7 @@ def test_a_simple_cross_site_post_is_refused(tmp_path):
     assert r.status_code == 415
 
 
-@pytest.mark.parametrize("raw", [b"[" * 100000 + b"]" * 100000, b'{"n": ' + b"9" * 5000 + b"}"])
+@pytest.mark.parametrize("raw", [b"[" * 100000 + b"]" * 100000, b'{"n": ' + b"9" * 5000 + b"}"], ids=["deep", "huge-int"])
 def test_hostile_json_is_a_400_not_a_crash(tmp_path, raw):
     r = _client(create_app(make_cfg(tmp_path))).post("/v1/chat/completions", content=raw,
                                                      headers={"content-type": "application/json"})
