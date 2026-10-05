@@ -130,17 +130,23 @@ WINDOWS_INSTALLS = {p: tuple(f.replace("%LOCALAPPDATA%", LOCALAPPDATA) for f in 
 
 @pytest.mark.parametrize("exe,expected", [
     ("/Applications/Ollama.app/Contents/Resources/ollama", "ollama"),
-    ("/opt/homebrew/Cellar/ollama/0.12.3/bin/ollama", "ollama"),
     ("/usr/local/bin/ollama", "ollama"),
-    ("/opt/homebrew/Cellar/llama.cpp/6700/bin/llama-server", "llama-server"),
+    ("/opt/homebrew/bin/llama-server", "llama-server"),
+    ("/Applications/LM Studio.app/Contents/MacOS/LM Studio", "lm studio"),
     ("/Applications/LM Studio.app/Contents/Frameworks/LM Studio Helper.app/Contents/MacOS/LM Studio Helper", "lm studio"),
+    ("/Applications/LM Studio.app/Contents/Frameworks/LM Studio Helper (GPU).app/Contents/MacOS/LM Studio Helper (GPU)", "lm studio"),
     ("/Applications/Jan.app/Contents/MacOS/Jan", "jan"),
     ("/tmp/ollama", None),
     ("/Users/me/Downloads/ollama", None),
     ("/Users/me/LM Studio.app/Contents/MacOS/LM Studio", None),
     ("/usr/local/bin/ollama.exe", None),      # on Unix the suffix is part of the name
     ("/usr/local/bin/python3", None),
-    ("/opt/homebrew/Cellar/ollama/0.12.3/bin/ollama-proxy", None),
+    ("/opt/homebrew/bin/ollama-proxy", None),
+    ("/usr/local/bin/attacker/ollama", None),  # a direct child of the folder, not anything beneath it
+    ("/opt/homebrew/Cellar/ollama/0.12.3/bin/ollama", None),  # a Cellar binary counts only as the bin/ link's target
+    ("/Applications/LM Studio.app/Contents/Resources/python3", None),  # an app's folder does not bless any file in it
+    ("/Applications/LM Studio.app/Contents/MacOS/python3", None),
+    ("/Applications/Jan.app/proxy", None),
 ])
 def test_a_macos_executable_is_known_by_name_and_install_folder(monkeypatch, exe, expected):
     monkeypatch.setattr(discover, "_HostPath", PurePosixPath)
@@ -153,8 +159,12 @@ def test_a_macos_executable_is_known_by_name_and_install_folder(monkeypatch, exe
     (r"C:\Users\ME\APPDATA\Local\Programs\Ollama\OLLAMA.EXE", "ollama"),  # the file system ignores case
     (LOCALAPPDATA + r"\Microsoft\WinGet\Packages\ggml.llamacpp_Microsoft.Winget.Source_8wekyb3d8bbwe\llama-server.exe", "llama-server"),
     (LOCALAPPDATA + r"\Programs\LM Studio\LM Studio.exe", "lm studio"),
-    (LOCALAPPDATA + r"\Programs\LM Studio\resources\helper.exe", "lm studio"),
+    (LOCALAPPDATA + r"\Programs\LM Studio\resources\helper.exe", None),  # not the app's own name
+    (LOCALAPPDATA + r"\Programs\LM Studio\resources\LM Studio.exe", None),  # not a direct child of the install folder
     (LOCALAPPDATA + r"\Programs\Jan\Jan.exe", "jan"),
+    (LOCALAPPDATA + r"\Programs\Ollama\attacker\ollama.exe", None),
+    (LOCALAPPDATA + r"\Microsoft\WinGet\Packages\unrelated.proxy_Microsoft.Winget.Source_8wekyb3d8bbwe\llama-server.exe", None),
+    (LOCALAPPDATA + r"\Microsoft\WinGet\Packages\llama-server.exe", None),
     (LOCALAPPDATA + r"\Temp\ollama.exe", None),
     (r"C:\Users\me\Downloads\ollama.exe", None),
     (r"C:\Program Files\KoboldCpp\koboldcpp.exe", None),                 # a portable download has no install folder
@@ -276,15 +286,18 @@ def test_a_known_name_in_the_wrong_place_is_reported_as_such(monkeypatch):
 
 # Linux: /proc/net/tcp lists each listening socket with its creator's uid; the holders are found in every readable
 # process's descriptor table. A fake /proc tree stands in for the kernel's.
-def proc_tree(tmp_path, port, sockets, procs):
-    """sockets: (inode, uid) per LISTEN row; procs: pid -> (exe, [inodes held])."""
+def proc_tree(tmp_path, port, sockets, procs, sockets6=()):
+    """sockets: (inode, uid) per LISTEN row of /proc/net/tcp, sockets6 the same for tcp6; procs: pid -> (exe, [inodes
+    held])."""
     proc = tmp_path / "proc"
     (proc / "net").mkdir(parents=True)
-    rows = ["  sl  local_address rem_address   st tx_queue rx_queue tr tm->when retrnsmt   uid  timeout inode"]
-    for inode, uid in sockets:
-        rows.append(f"   0: 0100007F:{port:04X} 00000000:0000 0A 00000000:00000000 00:00000000 00000000  {uid}        0 {inode} 1 0 100 0 0 10 0")
-    rows.append(f"   1: 0100007F:{port:04X} 0100007F:B3C2 01 00000000:00000000 00:00000000 00000000  {sockets[0][1]}        0 999 1 0 20 4 -1")
-    (proc / "net" / "tcp").write_text("\n".join(rows) + "\n")
+    header = "  sl  local_address rem_address   st tx_queue rx_queue tr tm->when retrnsmt   uid  timeout inode"
+    for table, listening, local in (("tcp", sockets, "0100007F"), ("tcp6", sockets6, "00000000000000000000000001000000")):
+        rows = [header]
+        for inode, uid in listening:
+            rows.append(f"   0: {local}:{port:04X} {'0' * len(local)}:0000 0A 00000000:00000000 00:00000000 00000000  {uid}        0 {inode} 1 0 100 0 0 10 0")
+        rows.append(f"   1: {local}:{port:04X} {local}:B3C2 01 00000000:00000000 00:00000000 00000000  {os.getuid()}        0 999 1 0 20 4 -1")
+        (proc / "net" / table).write_text("\n".join(rows) + "\n")
     for pid, (exe, held) in procs.items():
         fd = proc / str(pid) / "fd"
         fd.mkdir(parents=True)
@@ -330,9 +343,9 @@ def test_linux_a_socket_of_another_user_gives_no_verdict(tmp_path, monkeypatch):
 
 
 @linux_only_logic
-def test_linux_a_process_whose_descriptors_cannot_be_read_is_skipped(tmp_path, monkeypatch):
-    """Another user's process, or one of ours that made itself non-dumpable (ssh-agent): it cannot hold our socket
-    unless a process of ours handed it over, so the verdict stands on the holders that can be read."""
+def test_linux_an_unreadable_process_that_holds_no_listener_does_not_matter(tmp_path, monkeypatch):
+    """ssh-agent, another user's shell: a descriptor table this user cannot read costs the verdict only when a socket
+    on the port is left with no holder found (test_review_14)."""
     if os.geteuid() == 0:
         pytest.skip("root reads everything")
     ollama = installed(tmp_path, monkeypatch)
@@ -349,7 +362,7 @@ def test_linux_a_process_whose_descriptors_cannot_be_read_is_skipped(tmp_path, m
 def test_linux_a_port_nobody_listens_on_has_no_holders(tmp_path, monkeypatch):
     monkeypatch.setattr(discover, "_PROC", str(proc_tree(tmp_path, 11434, [(777, os.getuid())], {})))
     assert discover._linux_holders(8080) == set()
-    assert discover._linux_holders(11434) == set()  # a socket nobody readable holds
+    assert discover._linux_holders(11434) is None  # a socket nobody readable holds: owners unknown, not absent
 
 
 # macOS: the kernel's socket list (netstat -v) names one holder per socket, of any user; each readable process is
@@ -364,12 +377,12 @@ tcp4       0      0  127.0.0.1.1234         *.*                    LISTEN       
 
 
 class _Run:
-    def __init__(self, stdout):
-        self.stdout = stdout
+    def __init__(self, stdout, stderr=""):
+        self.stdout, self.stderr, self.returncode = stdout, stderr, 0
 
 
-def macos_table(monkeypatch, netstat, procs: FakeProcess):
-    monkeypatch.setattr(discover.subprocess, "run", lambda *a, **kw: _Run(netstat))
+def macos_table(monkeypatch, netstat, procs: FakeProcess, stderr=""):
+    monkeypatch.setattr(discover.subprocess, "run", lambda *a, **kw: _Run(netstat, stderr))
     monkeypatch.setattr(discover.psutil, "process_iter", procs.iter)
 
 

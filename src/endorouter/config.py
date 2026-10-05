@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
 import yaml
 
@@ -121,6 +122,18 @@ def _strs(v: Any, where: str) -> tuple[str, ...]:
     return tuple(v)
 
 
+def _url(v: str, where: str) -> None:
+    """An http(s) URL whose host and port parse: discovery reads the port before every send, and a port it cannot read
+    would leave that target unverifiable rather than refuse the config."""
+    try:
+        parts = urlsplit(v)
+        host, _ = parts.hostname, parts.port  # .port raises when it is not a number or out of range
+    except ValueError as e:  # that, or a netloc that does not parse
+        raise ConfigError(f"{where}: {e}") from None
+    if parts.scheme not in ("http", "https") or not host:
+        raise ConfigError(f"{where} must be an http(s) URL with a host")
+
+
 def _section(raw: dict, name: str) -> dict:
     """An optional mapping. Written but not a mapping (null, false, [], 0) is an error, never the defaults: a
     section left empty by mistake would otherwise silently trust the default clients."""
@@ -154,8 +167,7 @@ def parse_config(raw: dict) -> Config:
                 raise ConfigError(f"targets.{name}.{k} is required")
         if t["location"] not in LOCATIONS:
             raise ConfigError(f"targets.{name}.location must be 'local' or 'cloud'")
-        if not t["url"].startswith(("http://", "https://")):
-            raise ConfigError(f"targets.{name}.url must be http(s)")
+        _url(t["url"], f"targets.{name}.url")
         targets.append(
             Target(
                 name=name,

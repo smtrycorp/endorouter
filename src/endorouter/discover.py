@@ -5,13 +5,15 @@ names that hold secrets. A user who wants more (public sources, balanced mode) e
 from __future__ import annotations
 
 import ctypes
+import fnmatch
 import json
 import os
 import shlex
+import stat
 import subprocess
 import sys
 from collections import namedtuple
-from pathlib import Path, PurePosixPath, PureWindowsPath
+from pathlib import Path, PurePath, PurePosixPath, PureWindowsPath
 from urllib.parse import urlsplit
 
 import httpx
@@ -57,37 +59,45 @@ def default_audit_log() -> str:
     return str(base / "audit.jsonl")
 
 
-# Where each local-inference program's installer puts its executable, per platform. A port is trusted only when every
-# process holding it runs an executable from one of these places, as the kernel reports the path (resolved, so
-# Homebrew's /opt/homebrew/bin/ollama symlink is seen as its Cellar target). A known name anywhere else, such as a
-# download folder or /tmp, proves nothing: anyone can put a file of that name there. A Python program (vLLM, mlx_lm,
-# KoboldCpp) cannot be verified either: 'python -m vllm' names a module, not the code that answers. Both are used
-# only with `init --trust <name>=<model>`. Ollama: install.sh puts the Linux binary in <prefix>/bin and the macOS
-# server inside Ollama.app; the Windows installer uses %LOCALAPPDATA%\Programs\Ollama. llama.cpp: Homebrew and
-# winget. LM Studio and Jan serve their port from helper processes inside the app, so any executable inside counts.
+# The folder each local-inference program's installer puts its executable in, per platform. A port is trusted only when
+# every process holding it runs an executable from one of these places, judged by its canonical path: a direct child
+# of a folder here, or what the file of its name in a folder here links to. The second form is how Homebrew installs:
+# /opt/homebrew/bin/ollama is a symlink to <Cellar>/ollama/<version>/bin/ollama, and only the version the link points
+# at counts, so a Cellar folder of any other name does not. Ollama's macOS app links /usr/local/bin/ollama to the
+# server in Contents/Resources the same way. A known name anywhere else, such as a download folder or /tmp, proves
+# nothing: anyone can put a file of that name there. A Python program (vLLM, mlx_lm, KoboldCpp) cannot be verified
+# either: 'python -m vllm' names a module, not the code that answers. Both are used only with `init --trust
+# <name>=<model>`. Ollama: install.sh extracts into <prefix>/bin on Linux; the Windows installer uses
+# %LOCALAPPDATA%\Programs\Ollama. llama.cpp: Homebrew, and WinGet's ggml.llamacpp package, whose folder is the
+# package name, an underscore and the source's name ("*" stands for any text within that one segment). LM Studio and
+# Jan: the app's own executable, and on macOS the helper apps Electron puts in Contents/Frameworks.
 INSTALLS = {
     "linux": {
-        "ollama": ("/usr/local/bin", "/usr/bin", "/bin", "/home/linuxbrew/.linuxbrew/Cellar/ollama"),
-        "llama-server": ("/usr/local/bin", "/usr/bin", "/home/linuxbrew/.linuxbrew/Cellar/llama.cpp"),
+        "ollama": ("/usr/local/bin", "/usr/bin", "/bin", "/home/linuxbrew/.linuxbrew/bin"),
+        "llama-server": ("/usr/local/bin", "/usr/bin", "/home/linuxbrew/.linuxbrew/bin"),
     },
     "darwin": {
-        "ollama": ("/Applications/Ollama.app", "/usr/local/bin", "/opt/homebrew/Cellar/ollama", "/usr/local/Cellar/ollama"),
-        "llama-server": ("/usr/local/bin", "/opt/homebrew/Cellar/llama.cpp", "/usr/local/Cellar/llama.cpp"),
-        "lm studio": ("/Applications/LM Studio.app",),
-        "jan": ("/Applications/Jan.app",),
+        "ollama": ("/Applications/Ollama.app/Contents/Resources", "/usr/local/bin", "/opt/homebrew/bin"),
+        "llama-server": ("/usr/local/bin", "/opt/homebrew/bin"),
+        "lm studio": ("/Applications/LM Studio.app/Contents/MacOS", "/Applications/LM Studio.app/Contents/Frameworks/*/Contents/MacOS"),
+        "jan": ("/Applications/Jan.app/Contents/MacOS",),
     },
     "win32": {
         "ollama": (r"%LOCALAPPDATA%\Programs\Ollama",),
-        "llama-server": (r"%LOCALAPPDATA%\Microsoft\WinGet\Packages",),
+        "llama-server": (r"%LOCALAPPDATA%\Microsoft\WinGet\Packages\ggml.llamacpp_*",),
         "lm studio": (r"%LOCALAPPDATA%\Programs\LM Studio",),
         "jan": (r"%LOCALAPPDATA%\Programs\Jan",),
     },
 }
-APPS = {"lm studio", "jan"}  # matched by folder alone; the others by the executable's name as well
+# apps whose server runs under the app's own name or, for Electron's helper processes, "<App> Helper" with the
+# helper's kind in parentheses
+APPS = {"lm studio", "jan"}
+ADMIN_GID = 80  # macOS: members of admin may run anything as root with sudo, so what admin can write, root can
 
 # process paths are in the syntax of the machine the process runs on; tests set these to judge another platform
 _HostPath = PureWindowsPath if sys.platform == "win32" else PurePosixPath
 _INSTALLS = INSTALLS.get(sys.platform, {})
+_stat = os.stat
 
 
 def _basename(path: str) -> str:
@@ -97,30 +107,78 @@ def _basename(path: str) -> str:
     return name.removesuffix(".exe") if _HostPath is PureWindowsPath else name
 
 
+def _named(exe: str, program: str) -> bool:
+    name = _basename(exe)
+    return name == program or (program in APPS and name.startswith(f"{program} helper"))
+
+
+def _in_folder(parent: PurePath, folder: str) -> bool:
+    """Segment by segment, "*" matching any text within its segment; case does not count on Windows."""
+    want, have = _HostPath(os.path.expandvars(folder)).parts, parent.parts
+    fold = str.lower if _HostPath is PureWindowsPath else str
+    return len(want) == len(have) and all(fnmatch.fnmatchcase(fold(h), fold(w)) for w, h in zip(want, have, strict=True))
+
+
 def _installed(exe: str) -> str | None:
-    """The program an executable belongs to by its name and its place: inside one of the folders its installer uses."""
+    """The program an executable is by its name and its place: a direct child of a folder its installer uses. The
+    path is compared as given; _program canonicalises first."""
     path = _HostPath(exe)
     for program, folders in _INSTALLS.items():
-        if program in APPS or _basename(exe) == program:
-            if any(_HostPath(os.path.expandvars(f)) in path.parents for f in folders):
-                return program
+        if _named(exe, program) and any(_in_folder(path.parent, f) for f in folders):
+            return program
     return None
 
 
-def _program(exe: str) -> str | None:
-    """The local-inference program an executable is, or None: a known name in its install location that, on Unix, no
-    other user can write. Windows has no mode bits to read: the install folders are under the user's own profile, and
-    their access lists are not checked."""
-    program = _installed(exe)
-    if program is None:
-        return None
-    if sys.platform != "win32":
+def _linked(canonical: str) -> str | None:
+    """The program whose file of this name, in a folder its installer uses, links to this very executable: the
+    Homebrew form. Host paths only, since the links are followed."""
+    name = os.path.basename(canonical)
+    for program, folders in _INSTALLS.items():
+        if not _named(canonical, program):
+            continue
+        for folder in folders:
+            try:
+                if os.path.realpath(os.path.join(os.path.expandvars(folder), name), strict=True) == canonical:
+                    return program
+            except OSError:  # no such file there
+                continue
+    return None
+
+
+def _nobody_else_writes(path: str) -> bool:
+    """The file and every directory above it belong to root or to this user, and no other user may write any of them:
+    a writable directory lets its entries be replaced, whatever the file's own mode says. A sticky world-writable
+    directory (/tmp) is allowed, since only an entry's owner can remove or rename it there. On macOS the admin group
+    counts as root (see ADMIN_GID); /Applications and Homebrew's folders are admin-writable by default."""
+    me = os.getuid()
+    p = Path(path)
+    for node in (p, *p.parents):
         try:
-            if os.stat(exe).st_mode & 0o022:
-                return None
+            st = _stat(node)
         except OSError:
-            return None
-    return program
+            return False
+        if st.st_uid not in (0, me):
+            return False
+        others = 0o002 if sys.platform == "darwin" and st.st_gid == ADMIN_GID else 0o022
+        if st.st_mode & others and not (st.st_mode & stat.S_ISVTX and stat.S_ISDIR(st.st_mode)):
+            return False
+    return True
+
+
+def _program(exe: str) -> str | None:
+    """The local-inference program an executable is, or None. Judged by the canonical path, with symlinks, junctions,
+    8.3 names and ".." resolved, so a path that merely reads like an install location does not pass. On Unix the
+    file and every directory above it must be owned by root or this user and writable by nobody else. On Windows
+    there is no permission or ownership check at all: the install folders are under the user's own profile, and
+    their access lists are not read."""
+    try:
+        canonical = os.path.realpath(exe, strict=True)
+    except OSError:  # gone, or a link that leads nowhere
+        return None
+    program = _installed(canonical) or _linked(canonical)
+    if program is None or sys.platform == "win32":
+        return program
+    return program if _nobody_else_writes(canonical) else None
 
 
 Owner = namedtuple("Owner", "exe cmdline")  # exe as the kernel reports it; the command line is shown, never judged
@@ -134,14 +192,16 @@ _PROC = "/proc"
 
 
 def _linux_holders(port: int) -> set[int] | None:
-    """Every readable process holding a LISTEN socket on the port, from /proc, or None when a socket on it belongs to
-    another user. /proc/net/tcp and tcp6 list each listening socket once, with the uid that created it. The holders
-    are found in every process's descriptor table, so a listener two processes share is seen with both. A table this
-    user cannot read (another user's process, or one that made itself non-dumpable, as ssh-agent does) is skipped:
-    such a process can hold this user's socket only if a process of this user handed it over. psutil's table is not
-    used because it keeps one pid per socket, which hides a shared listener."""
+    """Every process holding a LISTEN socket on the port, from /proc, or None when any such socket cannot be traced to
+    a process. /proc/net/tcp and tcp6 list each listening socket once, with the uid that created it and its inode;
+    the holders are found in every process's descriptor table, so a listener two processes share is seen with both.
+    A socket of another user, one without an inode, or one that no readable process holds (its holder's table is
+    unreadable: another user's process, or one of this user's that made itself non-dumpable) leaves the port's owners
+    unknown. The last case is not set aside as harmless: with SO_REUSEPORT a second process of this user binds its own
+    socket to the port and is handed a share of the connections, no handover needed. psutil's table is not used
+    because it keeps one pid per socket, which hides a shared listener."""
     me = os.getuid()
-    sockets = set()
+    traced = {}  # each listening socket, as its descriptor link reads, and whether a process was found holding it
     for table in ("tcp", "tcp6"):
         try:
             rows = Path(_PROC, "net", table).read_text().splitlines()[1:]
@@ -151,13 +211,14 @@ def _linux_holders(port: int) -> set[int] | None:
             fields = row.split()
             if len(fields) < 10:
                 return None
-            if fields[3] != "0A" or int(fields[1].rsplit(":", 1)[1], 16) != port:  # 0A is LISTEN
-                continue
-            if int(fields[7]) != me:
+            _, sep, port_hex = fields[1].rpartition(":")
+            if not sep:
                 return None
-            sockets.add(f"socket:[{fields[9]}]")
-    if not sockets:
-        return set()
+            if fields[3] != "0A" or int(port_hex, 16) != port:  # 0A is LISTEN
+                continue
+            if int(fields[7]) != me or fields[9] == "0":
+                return None
+            traced[f"socket:[{fields[9]}]"] = False
     pids = set()
     for entry in os.listdir(_PROC):
         if not entry.isdigit():
@@ -168,11 +229,13 @@ def _linux_holders(port: int) -> set[int] | None:
             continue
         for fd in fds:
             try:
-                if os.readlink(f"{_PROC}/{entry}/fd/{fd}") in sockets:
-                    pids.add(int(entry))
+                link = os.readlink(f"{_PROC}/{entry}/fd/{fd}")
             except OSError:  # closed meanwhile
                 continue
-    return pids
+            if link in traced:
+                traced[link] = True
+                pids.add(int(entry))
+    return pids if all(traced.values()) else None
 
 
 def _linux_exe(pid: int) -> str | None:
@@ -191,21 +254,32 @@ def _linux_cmdline(pid: int) -> str | None:
 
 
 _NETSTAT = ["/usr/sbin/netstat", "-anv", "-p", "tcp"]
+# the layout this parse reads: these columns lead the header, and eight counters follow process:pid
+_NETSTAT_HEAD = ("Proto", "Recv-Q", "Send-Q", "Local", "Address", "Foreign", "Address", "(state)")
 
 
 def _darwin_holders(port: int) -> set[int] | None:
-    """Every process holding a LISTEN socket on the port, or None when the kernel's list cannot be read. That list
-    (netstat -v reads it through sysctl, which needs no privilege, where psutil's system-wide table does) names one
-    holder per socket, of any user. A socket two processes share is listed with one of them, so each process is also
-    asked for its own sockets. One that refuses (another user's, or setuid) is skipped: it can hold this user's socket
-    only if a process of this user handed it over. A zombie holds no descriptors."""
-    out = subprocess.run(_NETSTAT, capture_output=True, text=True, check=True, timeout=10).stdout
+    """Every process holding a LISTEN socket on the port, or None when the kernel's list cannot be read, or is not in
+    the layout this parse reads. That list (netstat -v reads it through sysctl, which needs no privilege, where
+    psutil's system-wide table does) names one holder per socket, of any user. A socket two processes share is listed
+    with one of them, so each readable process is also asked for its own sockets. That supplement never stands alone:
+    a sandbox that denies the sysctl leaves netstat exiting 0 with an empty table and its complaint on stderr, and the
+    readable processes are then not the whole story. One that refuses (another user's, or setuid) is skipped: it can
+    hold this user's socket only if a process of this user handed it over. A zombie holds no descriptors."""
+    run = subprocess.run(_NETSTAT, capture_output=True, text=True, check=True, timeout=10)
+    lines = run.stdout.splitlines()
+    header = next((line.split() for line in lines if line.startswith("Proto")), [])
+    if run.stderr or tuple(header[:8]) != _NETSTAT_HEAD or header[-9:-8] != ["process:pid"]:
+        return None
     pids = set()
-    for line in out.splitlines():
+    for line in lines:
         fields = line.split()
         if len(fields) < 6 or not fields[0].startswith("tcp") or fields[5] != "LISTEN":
             continue
-        if int(fields[3].rsplit(".", 1)[1]) != port:
+        _, sep, local_port = fields[3].rpartition(".")
+        if not sep:
+            return None
+        if int(local_port) != port:
             continue
         # the line ends "process:pid" and eight counters; a layout this parse does not fit gives no verdict
         head, *counters = line.rsplit(None, 8)
@@ -280,10 +354,10 @@ else:
 def _port_owners(url: str) -> list[Owner] | None:
     """Every process listening on the url's port, with the executable the kernel reports for it, or None when any of
     them is unknown: a partial list of a port's owners is exactly the one that would leave out a forwarding process."""
-    port = urlsplit(url).port
-    if not port:
-        return None
     try:
+        port = urlsplit(url).port  # a port that is not a number, or out of range, raises here
+        if not port:
+            return None
         pids = _holders(port)
         if not pids:
             return None
