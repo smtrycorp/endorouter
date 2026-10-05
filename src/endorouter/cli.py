@@ -57,9 +57,9 @@ def cmd_doctor(args) -> int:
         os.close(os.open(cfg.audit_log, OPEN_FLAGS, 0o600))
         print("audit log: writable")
         if sys.platform == "win32":
-            # Windows ignores the mode: the file takes its folder's access list, and the default folder,
-            # %LOCALAPPDATA%, is private to the user
-            print("audit log: access follows its folder on Windows; keep it in a folder only you can read")
+            # the mode is not applied on Windows; the router sets no access list of its own and does not read the
+            # folder's, and the default folder, %LOCALAPPDATA%, is private to the user by default
+            print("audit log: the router sets no access list on Windows; keep it in a folder only you can read")
         elif os.stat(cfg.audit_log).st_mode & 0o077:
             # the mode applies only when the file is created: an older log may still be readable by others
             print(f"audit log: readable by other users; run `chmod 600 {cfg.audit_log}`")
