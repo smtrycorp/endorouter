@@ -1,7 +1,7 @@
 name: ci
 on:
   push:
-    branches: [main]  # windows: while that branch is built, CI is its only Windows machine
+    branches: [main]
   pull_request:
 permissions:
   contents: read
