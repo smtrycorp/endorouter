@@ -7,12 +7,13 @@ from __future__ import annotations
 import json
 import os
 import re
-import shutil
-import subprocess
-from pathlib import Path
+import shlex
+import sys
+from pathlib import Path, PurePosixPath, PureWindowsPath
 from urllib.parse import urlsplit
 
 import httpx
+import psutil
 
 # default OpenAI-compatible ports of common local servers, in the order they are tried
 LOCAL_SERVERS = [
@@ -56,21 +57,30 @@ LOCAL_INFERENCE_PROGRAMS = {"ollama", "llama-server", "llamafile", "vllm", "mlx_
 PYTHON_INFERENCE_PROGRAMS = {"vllm", "mlx_lm", "koboldcpp"}
 LOCAL_INFERENCE_APPS = {"LM Studio.app"}  # an app bundle, matched as a whole path component
 
+# process paths are in the syntax of the machine the process runs on; tests set this to judge the other platform
+_HostPath = PureWindowsPath if sys.platform == "win32" else PurePosixPath
+
+
+def _basename(path: str) -> str:
+    """The lower-cased file name, less the '.exe' every Windows program carries. Only there: on Unix a file called
+    ollama.exe is not ollama."""
+    name = _HostPath(path).name.lower()
+    return name.removesuffix(".exe") if _HostPath is PureWindowsPath else name
+
 
 def _program(cmdline: str) -> str | None:
     """The local-inference program a command line runs, matched exactly: the executable's name, the module after
     'python -m', or the script a Python interpreter runs. A substring anywhere in the line is never enough (a proxy
-    run from ~/vllm-tests/ must not count as vLLM)."""
-    import shlex
-
-    # the executable path (ps comm) comes first when known; an app bundle is judged from it alone, never from the
+    run from ~/vllm-tests/ must not count as vLLM). The line is the executable's path, then NUL, then the shell-quoted
+    command line; without the NUL the whole line is the command line."""
+    # the executable path comes first when known; an app bundle is judged from it alone, never from the
     # arguments (node '/Users/me/LM Studio.app/proxy.js' is node)
     exe_path, sep, rest = cmdline.partition("\0")
     interpreter = False
     if sep:
         cmdline = rest
-        # the executable (ps comm) decides when it is known: a node process titled "ollama serve" is node
-        exe_name = Path(exe_path).name.lower()
+        # the executable decides when it is known: a node process titled "ollama serve" is node
+        exe_name = _basename(exe_path)
         if exe_name in LOCAL_INFERENCE_PROGRAMS:
             return exe_name
         if not exe_name.startswith("python") and ".app/" not in exe_path:
@@ -89,13 +99,12 @@ def _program(cmdline: str) -> str | None:
         argv = cmdline.split()
     if not argv:
         return None
-    exe = Path(argv[0])
-    if interpreter and not exe.name.lower().startswith("python"):
+    name = _basename(argv[0])
+    if interpreter and not name.startswith("python"):
         # a process can set its own title: a Python program calling itself "ollama serve" is still Python
         return None
-    if any(part in LOCAL_INFERENCE_APPS for part in exe.parts):
+    if any(part in LOCAL_INFERENCE_APPS for part in _HostPath(argv[0]).parts):
         return "lm studio"
-    name = exe.name.lower()
     if name in LOCAL_INFERENCE_PROGRAMS:
         return name
     if name.startswith("python"):
@@ -111,49 +120,55 @@ def _program(cmdline: str) -> str | None:
                 break
             i += 2 if a in ("-X", "-W", "-Q") else 1
         if i < len(argv) and not argv[i].startswith("-"):
-            base = Path(argv[i]).name.lower()
+            base = _basename(argv[i])
             return base if base in PYTHON_INFERENCE_PROGRAMS else None
         return None
     return None
 
 
-def _run(argv: list[str]) -> str | None:
-    """stdout of a command that succeeded, or None. A failed lsof or ps can print a partial answer, and a partial
-    list of a port's owners is exactly the one that would leave out a forwarding process."""
+def _listens_on(conn, port: int) -> bool:
+    return conn.status == psutil.CONN_LISTEN and bool(conn.laddr) and conn.laddr.port == port
+
+
+def _listeners(port: int) -> set[int | None]:
+    """The pid of every process listening on the port. None stands for a listener whose process this user cannot see
+    (on Linux, another user's)."""
     try:
-        done = subprocess.run(argv, capture_output=True, text=True, timeout=5)
-    except (OSError, subprocess.SubprocessError):
-        return None
-    return done.stdout if done.returncode == 0 else None
-
-
-def _executable(pid: str) -> str | None:
-    """The file the process runs. On Linux, ps reports /proc/<pid>/comm, a name any process can set for itself (and a
-    script's file name), so the kernel's link to the executable is read instead; a process of another user cannot be
-    read and gives no answer. macOS has no such title to forge: ps reports the executable path."""
-    if Path("/proc/self/exe").exists():
-        try:
-            return os.readlink(f"/proc/{pid}/exe")
-        except OSError:
-            return None
-    return _run(["ps", "-o", "comm=", "-p", pid])
+        return {c.pid for c in psutil.net_connections(kind="tcp") if _listens_on(c, port)}
+    except psutil.AccessDenied:
+        # macOS gives the whole table to root only; each process answers for its own sockets, and another user's
+        # process refuses, so its listener goes unseen (lsof as a user sees the same)
+        pids = set()
+        for p in psutil.process_iter():
+            try:
+                if any(_listens_on(c, port) for c in p.net_connections(kind="tcp")):
+                    pids.add(p.pid)
+            except psutil.Error:  # another user's process, or one that exited meanwhile
+                continue
+        return pids
 
 
 def _port_owners(url: str) -> list[str] | None:
-    """The command line of every process listening on the url's port, or None if that cannot be determined."""
+    """The executable path and command line of every process listening on the url's port, or None when any of them
+    cannot be read: a partial list of a port's owners is exactly the one that would leave out a forwarding process.
+    The executable comes from the kernel (/proc/<pid>/exe, proc_pidpath, QueryFullProcessImageName), which a process
+    cannot forge the way it can its title or argv."""
     port = urlsplit(url).port
-    if not port or not shutil.which("lsof") or not shutil.which("ps"):
+    if not port:
         return None
-    listing = _run(["lsof", "-nP", f"-iTCP:{port}", "-sTCP:LISTEN", "-t"])
-    pids = listing.split() if listing else []
-    if not pids:
+    pids = _listeners(port)
+    if not pids or None in pids:
         return None
     owners = []
-    for pid in dict.fromkeys(pids):
-        exe, cmd = _executable(pid), _run(["ps", "-o", "command=", "-p", pid])
-        if not exe or not cmd:  # the process exited between the two checks, or ps failed: no verdict
+    for pid in pids:
+        try:
+            proc = psutil.Process(pid)
+            exe, argv = proc.exe(), proc.cmdline()
+        except psutil.Error:  # another user's process, or one that exited between the two reads
             return None
-        owners.append(f"{exe.strip()}\0{cmd.strip()}")  # executable path, then the full command line
+        if not exe or not argv:  # macOS answers an empty command line for a process it will not show
+            return None
+        owners.append(f"{exe}\0{shlex.join(argv)}")
     return owners
 
 
@@ -235,7 +250,6 @@ def find_local(timeout: float = 1.0) -> tuple[list[tuple[str, str, str, str | No
             if program is None:
                 owners = _port_owners(url) or []
                 shown = "; ".join(o.split("\0")[-1][:160] for o in owners) or (
-                    "unknown, because lsof is not installed" if not shutil.which("lsof") else
                     "a program this user cannot see (on Linux, a service running as another user, such as the ollama "
                     "service, is invisible to this check)")
                 notes.append(f"found a server at {url} but could not verify it runs models on this machine. It is "

@@ -1,5 +1,5 @@
 """Review round 10 (pre-launch): one representation for scan and send, honest post-send audit failure, verification
-that is never cached, process titles that lie, failed lsof, and a classifier failure that shows in the audit log."""
+that is never cached, process titles that lie, a listener that cannot be seen, and a classifier failure that shows in the audit log."""
 
 from __future__ import annotations
 
@@ -118,14 +118,11 @@ def test_a_python_process_titled_ollama_is_python():
     assert discover._program("/usr/bin/python3\0/usr/bin/python3 -m vllm.entrypoints.openai.api_server") == "vllm"
 
 
-def test_a_failed_lsof_gives_no_verdict_even_with_partial_output(monkeypatch):
-    class Done:
-        def __init__(self, out, code):
-            self.stdout, self.returncode = out, code
+def test_a_listener_this_user_cannot_see_gives_no_verdict_even_beside_a_known_one(monkeypatch):
+    from tests.test_discover import Conn, FakeProcess
 
-    monkeypatch.setattr(discover.shutil, "which", lambda name: "/usr/bin/" + name)
-    monkeypatch.setattr(discover.subprocess, "run",
-                        lambda argv, **k: Done("4242\n", 2) if argv[0] == "lsof" else Done("/usr/local/bin/ollama", 0))
+    monkeypatch.setattr(discover.psutil, "net_connections", lambda kind: [Conn(11434, 4242), Conn(11434, None)])
+    monkeypatch.setattr(discover.psutil, "Process", FakeProcess({4242: ("/usr/local/bin/ollama", ["ollama", "serve"])}))
     assert discover._port_owners("http://127.0.0.1:11434/v1") is None
 
 

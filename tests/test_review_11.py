@@ -151,9 +151,11 @@ def test_a_python_program_named_after_a_native_server_is_not_it(cmd):
     assert discover._program(cmd) is None
 
 
-def test_on_linux_the_executable_comes_from_the_kernel_not_the_title(monkeypatch):
-    monkeypatch.setattr(discover.Path, "exists", lambda self: str(self) == "/proc/self/exe")
-    monkeypatch.setattr(discover.os, "readlink", lambda p: "/usr/bin/python3.12")
-    assert discover._executable("4242") == "/usr/bin/python3.12"
-    monkeypatch.setattr(discover.os, "readlink", lambda p: (_ for _ in ()).throw(PermissionError()))
-    assert discover._executable("4242") is None
+def test_an_executable_this_user_cannot_read_gives_no_verdict(monkeypatch):
+    import psutil
+
+    from tests.test_discover import Conn, FakeProcess
+
+    monkeypatch.setattr(discover.psutil, "net_connections", lambda kind: [Conn(11434, 4242)])
+    monkeypatch.setattr(discover.psutil, "Process", FakeProcess({4242: (psutil.AccessDenied(4242), ["ollama", "serve"])}))
+    assert discover._port_owners("http://127.0.0.1:11434/v1") is None

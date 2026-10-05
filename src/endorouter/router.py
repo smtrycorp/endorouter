@@ -230,7 +230,7 @@ class Router:
 
     async def _still_verified(self, target: Target, request_id: str) -> bool:
         """Checked before every send, never cached: a port that changes hands, or an Ollama model that is now hosted
-        remotely, is refused on the next request. lsof and ps run in a worker thread so other requests continue."""
+        remotely, is refused on the next request. The process table is read in a worker thread so other requests continue."""
         reason = await asyncio.to_thread(verify_target, target)
         if reason is None and (target.ollama_api or target.verify_program == "ollama"):
             reason = await self._ollama_model_remote(target)
