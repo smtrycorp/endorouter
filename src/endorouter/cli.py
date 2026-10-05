@@ -181,7 +181,7 @@ def main(argv: list[str] | None = None) -> int:
         if name == "init":
             p.add_argument("--force", action="store_true", help="replace an existing config")
             p.add_argument("--trust", action="append", default=[], metavar="NAME",
-                           help="declare a discovered server local although it could not be verified (e.g. jan)")
+                           help="declare a discovered server local although it could not be verified (e.g. vllm=<model>)")
         if name == "explain":
             p.add_argument("-f", "--file", help="a prompt or a JSON request body (default: stdin, so prompts stay out of shell history)")
             p.add_argument("--source", action="append", default=[], help="a source identifier (repeatable)")

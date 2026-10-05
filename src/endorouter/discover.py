@@ -4,11 +4,13 @@ names that hold secrets. A user who wants more (public sources, balanced mode) e
 
 from __future__ import annotations
 
+import ctypes
 import json
 import os
-import re
 import shlex
+import subprocess
 import sys
+from collections import namedtuple
 from pathlib import Path, PurePosixPath, PureWindowsPath
 from urllib.parse import urlsplit
 
@@ -55,17 +57,37 @@ def default_audit_log() -> str:
     return str(base / "audit.jsonl")
 
 
-# Programs known to run inference on this machine. A server is trusted as local only when the process that owns its
-# port is one of these; anything else (a gateway, a proxy, an app that can call hosted models) could forward prompts
-# to a cloud, so it is reported but never trusted without an explicit `init --trust <name>`.
-LOCAL_INFERENCE_PROGRAMS = {"ollama", "llama-server", "llamafile", "vllm", "mlx_lm", "koboldcpp", "lms"}
-# the ones written in Python, so run as 'python -m <module>' or 'python <script>'; a native program (ollama,
-# llama-server) is never a Python script, so a script by that name is something else wearing its name
-PYTHON_INFERENCE_PROGRAMS = {"vllm", "mlx_lm", "koboldcpp"}
-LOCAL_INFERENCE_APPS = {"LM Studio.app"}  # an app bundle, matched as a whole path component
+# Where each local-inference program's installer puts its executable, per platform. A port is trusted only when every
+# process holding it runs an executable from one of these places, as the kernel reports the path (resolved, so
+# Homebrew's /opt/homebrew/bin/ollama symlink is seen as its Cellar target). A known name anywhere else, such as a
+# download folder or /tmp, proves nothing: anyone can put a file of that name there. A Python program (vLLM, mlx_lm,
+# KoboldCpp) cannot be verified either: 'python -m vllm' names a module, not the code that answers. Both are used
+# only with `init --trust <name>=<model>`. Ollama: install.sh puts the Linux binary in <prefix>/bin and the macOS
+# server inside Ollama.app; the Windows installer uses %LOCALAPPDATA%\Programs\Ollama. llama.cpp: Homebrew and
+# winget. LM Studio and Jan serve their port from helper processes inside the app, so any executable inside counts.
+INSTALLS = {
+    "linux": {
+        "ollama": ("/usr/local/bin", "/usr/bin", "/bin", "/home/linuxbrew/.linuxbrew/Cellar/ollama"),
+        "llama-server": ("/usr/local/bin", "/usr/bin", "/home/linuxbrew/.linuxbrew/Cellar/llama.cpp"),
+    },
+    "darwin": {
+        "ollama": ("/Applications/Ollama.app", "/usr/local/bin", "/opt/homebrew/Cellar/ollama", "/usr/local/Cellar/ollama"),
+        "llama-server": ("/usr/local/bin", "/opt/homebrew/Cellar/llama.cpp", "/usr/local/Cellar/llama.cpp"),
+        "lm studio": ("/Applications/LM Studio.app",),
+        "jan": ("/Applications/Jan.app",),
+    },
+    "win32": {
+        "ollama": (r"%LOCALAPPDATA%\Programs\Ollama",),
+        "llama-server": (r"%LOCALAPPDATA%\Microsoft\WinGet\Packages",),
+        "lm studio": (r"%LOCALAPPDATA%\Programs\LM Studio",),
+        "jan": (r"%LOCALAPPDATA%\Programs\Jan",),
+    },
+}
+APPS = {"lm studio", "jan"}  # matched by folder alone; the others by the executable's name as well
 
-# process paths are in the syntax of the machine the process runs on; tests set this to judge the other platform
+# process paths are in the syntax of the machine the process runs on; tests set these to judge another platform
 _HostPath = PureWindowsPath if sys.platform == "win32" else PurePosixPath
+_INSTALLS = INSTALLS.get(sys.platform, {})
 
 
 def _basename(path: str) -> str:
@@ -75,108 +97,206 @@ def _basename(path: str) -> str:
     return name.removesuffix(".exe") if _HostPath is PureWindowsPath else name
 
 
-def _program(cmdline: str) -> str | None:
-    """The local-inference program a command line runs, matched exactly: the executable's name, the module after
-    'python -m', or the script a Python interpreter runs. A substring anywhere in the line is never enough (a proxy
-    run from ~/vllm-tests/ must not count as vLLM). The line is the executable's path, then NUL, then the shell-quoted
-    command line; without the NUL the whole line is the command line."""
-    # the executable path comes first when known; an app bundle is judged from it alone, never from the
-    # arguments (node '/Users/me/LM Studio.app/proxy.js' is node)
-    exe_path, sep, rest = cmdline.partition("\0")
-    interpreter = False
-    if sep:
-        cmdline = rest
-        # the executable decides when it is known: a node process titled "ollama serve" is node
-        exe_name = _basename(exe_path)
-        if exe_name in LOCAL_INFERENCE_PROGRAMS:
-            return exe_name
-        if not exe_name.startswith("python") and ".app/" not in exe_path:
-            return None
-        interpreter = exe_name.startswith("python")
-    else:
-        m = re.match(r"^(/(?:[^/]+/)*?[^/]+\.app/Contents/MacOS/[^/]+?)(?:\s+-|$)", cmdline)
-        exe_path = m.group(1) if m else ""
-    if exe_path.startswith("/") and ".app/" in exe_path:
-        bundle = Path(exe_path.split(".app/", 1)[0] + ".app").name
-        if bundle in LOCAL_INFERENCE_APPS:
-            return "lm studio"
-    try:
-        argv = shlex.split(cmdline)
-    except ValueError:
-        argv = cmdline.split()
-    if not argv:
-        return None
-    name = _basename(argv[0])
-    if interpreter and not name.startswith("python"):
-        # a process can set its own title: a Python program calling itself "ollama serve" is still Python
-        return None
-    if any(part in LOCAL_INFERENCE_APPS for part in _HostPath(argv[0]).parts):
-        return "lm studio"
-    if name in LOCAL_INFERENCE_PROGRAMS:
-        return name
-    if name.startswith("python"):
-        # interpreter options come first; the first non-option is the script, or '-m <module>' names a module.
-        # A '-m' after the script belongs to the script (python proxy.py -m vllm is not vLLM).
-        i = 1
-        while i < len(argv):
-            a = argv[i]
-            if a == "-m":
-                mod = argv[i + 1].split(".")[0].lower() if i + 1 < len(argv) else ""
-                return mod if mod in PYTHON_INFERENCE_PROGRAMS else None
-            if a == "-c" or not a.startswith("-"):
-                break
-            i += 2 if a in ("-X", "-W", "-Q") else 1
-        if i < len(argv) and not argv[i].startswith("-"):
-            base = _basename(argv[i])
-            return base if base in PYTHON_INFERENCE_PROGRAMS else None
-        return None
+def _installed(exe: str) -> str | None:
+    """The program an executable belongs to by its name and its place: inside one of the folders its installer uses."""
+    path = _HostPath(exe)
+    for program, folders in _INSTALLS.items():
+        if program in APPS or _basename(exe) == program:
+            if any(_HostPath(os.path.expandvars(f)) in path.parents for f in folders):
+                return program
     return None
+
+
+def _program(exe: str) -> str | None:
+    """The local-inference program an executable is, or None: a known name in its install location that, on Unix, no
+    other user can write. Windows has no mode bits to read: the install folders are under the user's own profile, and
+    their access lists are not checked."""
+    program = _installed(exe)
+    if program is None:
+        return None
+    if sys.platform != "win32":
+        try:
+            if os.stat(exe).st_mode & 0o022:
+                return None
+        except OSError:
+            return None
+    return program
+
+
+Owner = namedtuple("Owner", "exe cmdline")  # exe as the kernel reports it; the command line is shown, never judged
 
 
 def _listens_on(conn, port: int) -> bool:
     return conn.status == psutil.CONN_LISTEN and bool(conn.laddr) and conn.laddr.port == port
 
 
-def _listeners(port: int) -> set[int | None]:
-    """The pid of every process listening on the port. None stands for a listener whose process this user cannot see
-    (on Linux, another user's)."""
-    try:
-        return {c.pid for c in psutil.net_connections(kind="tcp") if _listens_on(c, port)}
-    except psutil.AccessDenied:
-        # macOS gives the whole table to root only; each process answers for its own sockets, and another user's
-        # process refuses, so its listener goes unseen (lsof as a user sees the same)
-        pids = set()
-        for p in psutil.process_iter():
-            try:
-                if any(_listens_on(c, port) for c in p.net_connections(kind="tcp")):
-                    pids.add(p.pid)
-            except psutil.Error:  # another user's process, or one that exited meanwhile
+_PROC = "/proc"
+
+
+def _linux_holders(port: int) -> set[int] | None:
+    """Every readable process holding a LISTEN socket on the port, from /proc, or None when a socket on it belongs to
+    another user. /proc/net/tcp and tcp6 list each listening socket once, with the uid that created it. The holders
+    are found in every process's descriptor table, so a listener two processes share is seen with both. A table this
+    user cannot read (another user's process, or one that made itself non-dumpable, as ssh-agent does) is skipped:
+    such a process can hold this user's socket only if a process of this user handed it over. psutil's table is not
+    used because it keeps one pid per socket, which hides a shared listener."""
+    me = os.getuid()
+    sockets = set()
+    for table in ("tcp", "tcp6"):
+        try:
+            rows = Path(_PROC, "net", table).read_text().splitlines()[1:]
+        except FileNotFoundError:  # IPv6 disabled
+            continue
+        for row in rows:
+            fields = row.split()
+            if len(fields) < 10:
+                return None
+            if fields[3] != "0A" or int(fields[1].rsplit(":", 1)[1], 16) != port:  # 0A is LISTEN
                 continue
-        return pids
+            if int(fields[7]) != me:
+                return None
+            sockets.add(f"socket:[{fields[9]}]")
+    if not sockets:
+        return set()
+    pids = set()
+    for entry in os.listdir(_PROC):
+        if not entry.isdigit():
+            continue
+        try:
+            fds = os.listdir(f"{_PROC}/{entry}/fd")
+        except OSError:  # unreadable, or exited meanwhile
+            continue
+        for fd in fds:
+            try:
+                if os.readlink(f"{_PROC}/{entry}/fd/{fd}") in sockets:
+                    pids.add(int(entry))
+            except OSError:  # closed meanwhile
+                continue
+    return pids
 
 
-def _port_owners(url: str) -> list[str] | None:
-    """The executable path and command line of every process listening on the url's port, or None when any of them
-    cannot be read: a partial list of a port's owners is exactly the one that would leave out a forwarding process.
-    The executable comes from the kernel (/proc/<pid>/exe, proc_pidpath, QueryFullProcessImageName), which a process
-    cannot forge the way it can its title or argv."""
+def _linux_exe(pid: int) -> str | None:
+    try:
+        return os.readlink(f"{_PROC}/{pid}/exe")
+    except OSError:
+        return None
+
+
+def _linux_cmdline(pid: int) -> str | None:
+    try:
+        argv = Path(_PROC, str(pid), "cmdline").read_bytes().split(b"\0")
+    except OSError:
+        return None
+    return shlex.join(a.decode(errors="replace") for a in argv if a) or None
+
+
+_NETSTAT = ["/usr/sbin/netstat", "-anv", "-p", "tcp"]
+
+
+def _darwin_holders(port: int) -> set[int] | None:
+    """Every process holding a LISTEN socket on the port, or None when the kernel's list cannot be read. That list
+    (netstat -v reads it through sysctl, which needs no privilege, where psutil's system-wide table does) names one
+    holder per socket, of any user. A socket two processes share is listed with one of them, so each process is also
+    asked for its own sockets. One that refuses (another user's, or setuid) is skipped: it can hold this user's socket
+    only if a process of this user handed it over. A zombie holds no descriptors."""
+    out = subprocess.run(_NETSTAT, capture_output=True, text=True, check=True, timeout=10).stdout
+    pids = set()
+    for line in out.splitlines():
+        fields = line.split()
+        if len(fields) < 6 or not fields[0].startswith("tcp") or fields[5] != "LISTEN":
+            continue
+        if int(fields[3].rsplit(".", 1)[1]) != port:
+            continue
+        # the line ends "process:pid" and eight counters; a layout this parse does not fit gives no verdict
+        head, *counters = line.rsplit(None, 8)
+        _, colon, pid = head.rpartition(":")
+        if len(counters) != 8 or not colon:
+            return None
+        pids.add(int(pid))
+    for p in psutil.process_iter():
+        try:
+            if any(_listens_on(c, port) for c in p.net_connections(kind="tcp")):
+                pids.add(p.pid)
+        except psutil.Error:
+            continue
+    return pids
+
+
+def _darwin_exe(pid: int) -> str | None:
+    buf = ctypes.create_string_buffer(4096)  # PROC_PIDPATHINFO_MAXSIZE
+    n = _libproc.proc_pidpath(pid, buf, 4096)
+    return os.fsdecode(buf.raw[:n]) if n > 0 else None
+
+
+def _windows_holders(port: int) -> set[int] | None:
+    """Every process holding a LISTEN socket on the port, or None when that set may be incomplete. psutil reads
+    GetExtendedTcpTable: every socket of every user, each with the pid that created it. A handle duplicated into a
+    second process is not listed, so a listener a verified program shares with another program needs that program's
+    cooperation, the same limit as on Unix. A row the table could not attribute to a process gives no verdict."""
+    pids = {c.pid for c in psutil.net_connections(kind="tcp") if _listens_on(c, port)}
+    return None if None in pids or 0 in pids else pids
+
+
+def _windows_exe(pid: int) -> str | None:
+    """The image path from the kernel: OpenProcess with the least right that allows the query, then
+    QueryFullProcessImageNameW. psutil's exe() is not used because it falls back to argv[0] when the kernel refuses."""
+    from ctypes import wintypes
+
+    k32 = ctypes.windll.kernel32
+    k32.OpenProcess.restype = wintypes.HANDLE
+    k32.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+    k32.QueryFullProcessImageNameW.restype = wintypes.BOOL
+    k32.QueryFullProcessImageNameW.argtypes = [wintypes.HANDLE, wintypes.DWORD, wintypes.LPWSTR, ctypes.POINTER(wintypes.DWORD)]
+    k32.CloseHandle.argtypes = [wintypes.HANDLE]
+    handle = k32.OpenProcess(0x1000, False, pid)  # PROCESS_QUERY_LIMITED_INFORMATION
+    if not handle:
+        return None
+    try:
+        size = wintypes.DWORD(32768)
+        buf = ctypes.create_unicode_buffer(size.value)
+        if not k32.QueryFullProcessImageNameW(handle, 0, buf, ctypes.byref(size)):
+            return None
+        return buf.value or None
+    finally:
+        k32.CloseHandle(handle)
+
+
+def _psutil_cmdline(pid: int) -> str | None:
+    try:
+        return shlex.join(psutil.Process(pid).cmdline()) or None
+    except psutil.Error:
+        return None
+
+
+if sys.platform == "linux":
+    _holders, _kernel_exe, _cmdline = _linux_holders, _linux_exe, _linux_cmdline
+elif sys.platform == "darwin":
+    _libproc = ctypes.CDLL("/usr/lib/libproc.dylib")
+    _holders, _kernel_exe, _cmdline = _darwin_holders, _darwin_exe, _psutil_cmdline
+else:
+    _holders, _kernel_exe, _cmdline = _windows_holders, _windows_exe, _psutil_cmdline
+
+
+def _port_owners(url: str) -> list[Owner] | None:
+    """Every process listening on the url's port, with the executable the kernel reports for it, or None when any of
+    them is unknown: a partial list of a port's owners is exactly the one that would leave out a forwarding process."""
     port = urlsplit(url).port
     if not port:
         return None
-    pids = _listeners(port)
-    if not pids or None in pids:
+    try:
+        pids = _holders(port)
+        if not pids:
+            return None
+        owners = []
+        for pid in pids:
+            exe = _kernel_exe(pid)
+            if not exe:
+                return None
+            owners.append(Owner(exe, _cmdline(pid) or exe))
+        return owners
+    except (OSError, ValueError, psutil.Error, subprocess.SubprocessError):
+        # a process table that cannot be read leaves the port's owners unknown; the caller reports that, not a traceback
         return None
-    owners = []
-    for pid in pids:
-        try:
-            proc = psutil.Process(pid)
-            exe, argv = proc.exe(), proc.cmdline()
-        except psutil.Error:  # another user's process, or one that exited between the two reads
-            return None
-        if not exe or not argv:  # macOS answers an empty command line for a process it will not show
-            return None
-        owners.append(f"{exe}\0{shlex.join(argv)}")
-    return owners
 
 
 def verified_program(url: str) -> str | None:
@@ -184,8 +304,17 @@ def verified_program(url: str) -> str | None:
     owners = _port_owners(url)
     if not owners:
         return None
-    programs = {_program(o) for o in owners}
+    programs = {_program(o.exe) for o in owners}
     return programs.pop() if len(programs) == 1 and None not in programs else None
+
+
+def _why_unverified(owners: list[Owner]) -> str:
+    names = {_basename(o.exe) for o in owners}
+    if names & set(_INSTALLS):
+        return "a program with a known name is running from outside its install location"
+    if any(n.startswith("python") for n in names):
+        return "a Python program (vLLM, KoboldCpp, mlx_lm) cannot be verified by its name"
+    return "it is not a known local-inference program"
 
 
 def verify_target(target) -> str | None:
@@ -255,12 +384,14 @@ def find_local(timeout: float = 1.0) -> tuple[list[tuple[str, str, str, str | No
                 continue
             program = verified_program(url)
             if program is None:
-                owners = _port_owners(url) or []
-                shown = "; ".join(o.split("\0")[-1][:160] for o in owners) or (
-                    "a program this user cannot see (on Linux, a service running as another user, such as the ollama "
-                    "service, is invisible to this check)")
-                notes.append(f"found a server at {url} but could not verify it runs models on this machine. It is "
-                             f"served by: {shown}. Not used. Only if that program runs models here, trust it with "
+                owners = _port_owners(url)
+                if owners:
+                    why = f"{_why_unverified(owners)}. It is served by: " + "; ".join(o.cmdline[:160] for o in owners)
+                else:
+                    why = ("it is served by a program this user cannot see (on Linux, a service running as another "
+                           "user, such as the ollama service, is invisible to this check)")
+                notes.append(f"found a server at {url} but could not verify it runs models on this machine: {why}. "
+                             f"Not used. Only if that program runs models here, trust it with "
                              f"`endorouter init --trust {name}=<model>` naming the local model to use")
                 continue
             ollama_api = program == "ollama" or _speaks_ollama(c, url)

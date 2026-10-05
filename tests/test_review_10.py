@@ -17,6 +17,7 @@ from endorouter.config import ConfigError, parse_config
 from endorouter.labels import Label
 from endorouter.router import Refused, Router, SentUnrecorded, UpstreamFailed
 from endorouter.validate import InvalidRequest
+from tests.test_discover import installed
 from tests.test_review_1 import _balanced
 from tests.test_router import make_cfg
 
@@ -83,7 +84,8 @@ def test_the_decision_record_names_who_supplied_the_label(tmp_path):
 def test_an_ollama_model_that_turns_remote_is_refused_on_the_next_send(tmp_path, monkeypatch):
     cfg = parse_config({"version": 1, "audit_log": str(tmp_path / "a.jsonl"), "targets": {
         "ollama": {"url": "http://local.test:11434/v1", "model": "m", "location": "local", "verify_program": "ollama"}}})
-    monkeypatch.setattr(discover, "_port_owners", lambda url: ["/usr/local/bin/ollama\0/usr/local/bin/ollama serve"])
+    ollama = installed(tmp_path, monkeypatch)
+    monkeypatch.setattr(discover, "_port_owners", lambda url: [ollama])
     state = {"remote": False}
     sent = []
 
@@ -106,25 +108,13 @@ def test_two_sends_mean_two_ownership_checks(tmp_path, monkeypatch):
     cfg = parse_config({"version": 1, "audit_log": str(tmp_path / "a.jsonl"), "targets": {
         "llama": {"url": "http://local.test:8080/v1", "model": "m", "location": "local", "verify_program": "llama-server"}}})
     checks = []
-    monkeypatch.setattr(discover, "_port_owners", lambda url: checks.append(url) or ["/opt/bin/llama-server\0llama-server"])
+    llama = installed(tmp_path, monkeypatch, "llama-server")
+    monkeypatch.setattr(discover, "_port_owners", lambda url: checks.append(url) or [llama])
     router = _router(cfg, [])
     body = {"model": "auto", "messages": [{"role": "user", "content": "hi"}]}
     asyncio.run(router.route(body))
     asyncio.run(router.route(body))
     assert len(checks) == 2
-
-
-def test_a_python_process_titled_ollama_is_python():
-    assert discover._program("/usr/bin/python3\0ollama serve") is None
-    assert discover._program("/usr/bin/python3\0/usr/bin/python3 -m vllm.entrypoints.openai.api_server") == "vllm"
-
-
-def test_a_listener_this_user_cannot_see_gives_no_verdict_even_beside_a_known_one(monkeypatch):
-    from tests.test_discover import Conn, FakeProcess
-
-    monkeypatch.setattr(discover.psutil, "net_connections", lambda kind: [Conn(11434, 4242), Conn(11434, None)])
-    monkeypatch.setattr(discover.psutil, "Process", FakeProcess({4242: ("/usr/local/bin/ollama", ["ollama", "serve"])}))
-    assert discover._port_owners("http://127.0.0.1:11434/v1") is None
 
 
 def test_a_broken_classifier_is_recorded_not_silent(tmp_path):

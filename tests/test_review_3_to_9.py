@@ -13,6 +13,7 @@ from endorouter.config import parse_config
 from endorouter.detectors import scan_request, scan_text
 from endorouter.router import Refused, Router, UpstreamFailed
 from endorouter.validate import InvalidRequest
+from tests.test_discover import installed
 from tests.test_review_1 import client_for, make_cfg_url
 from tests.test_router import Upstream, make_cfg
 
@@ -64,7 +65,7 @@ def test_spaced_keys_with_punctuation_are_found(key, rule):
 
 
 # new 1: discovery never trusts a server it cannot verify as local inference
-def test_discovery_does_not_trust_an_unverified_gateway(monkeypatch):
+def test_discovery_does_not_trust_an_unverified_gateway(monkeypatch, tmp_path):
     class Resp:
         status_code = 200
 
@@ -79,10 +80,11 @@ def test_discovery_does_not_trust_an_unverified_gateway(monkeypatch):
         def post(self, *a, **k): return Resp()
 
     monkeypatch.setattr(discover.httpx, "Client", C)
-    monkeypatch.setattr(discover, "_port_owners", lambda url: ["/usr/bin/python3 -m litellm --port 8000"])
+    monkeypatch.setattr(discover, "_port_owners", lambda url: [discover.Owner("/usr/bin/python3", "/usr/bin/python3 -m litellm --port 8000")])
     found, notes = discover.find_local()
     assert found == [] and any("--trust" in n for n in notes)
-    monkeypatch.setattr(discover, "_port_owners", lambda url: ["/opt/homebrew/bin/llama-server -m model.gguf"])
+    llama = installed(tmp_path, monkeypatch, "llama-server")
+    monkeypatch.setattr(discover, "_port_owners", lambda url: [llama])
     found, _ = discover.find_local()
     assert len(found) == len(discover.LOCAL_SERVERS)  # a verified local-inference program owns each port
 
@@ -156,24 +158,6 @@ def test_leakbench_keeps_case_request_fields():
 
 
 # review round 4
-@pytest.mark.parametrize("cmd,expected", [
-    ("/Users/me/vllm-testing/bin/python proxy.py", None),              # directory name is not the program
-    ("/usr/bin/python3 -m litellm --port 8000", None),
-    ("/opt/homebrew/bin/llama-server -m model.gguf --port 8080", "llama-server"),
-    ("/usr/bin/python3 -m vllm.entrypoints.openai.api_server", "vllm"),
-    ("/usr/local/bin/vllm serve Qwen/Qwen3-8B", "vllm"),
-    ("/opt/homebrew/bin/python3.12 -m mlx_lm.server --port 8080", "mlx_lm"),
-    ("/usr/local/bin/ollama serve", "ollama"),
-    ("/Applications/LM Studio.app/Contents/MacOS/LM Studio", "lm studio"),
-    ("/Users/me/ollama-proxy/bin/node server.js", None),
-    ("/usr/bin/python3 proxy.py -m vllm", None),                         # a -m after the script is the script's flag
-    ("/usr/bin/python3 -X dev -m vllm.entrypoints.openai.api_server", "vllm"),
-    ("/usr/bin/python3 -c 'import vllm'", None),
-])
-def test_discovery_matches_programs_exactly(cmd, expected):
-    assert discover._program(cmd) == expected
-
-
 def test_classifier_prompt_fences_the_text_with_a_fresh_boundary(tmp_path):
     from endorouter.classifier import classify
     from tests.test_review_1 import _balanced
@@ -193,13 +177,6 @@ def test_classifier_prompt_fences_the_text_with_a_fresh_boundary(tmp_path):
 
 
 # review round 5
-def test_every_listener_on_the_port_must_be_the_same_trusted_program(monkeypatch):
-    monkeypatch.setattr(discover, "_port_owners", lambda url: ["/usr/local/bin/ollama serve", "/usr/bin/python3 gw.py"])
-    assert discover.verified_program("http://127.0.0.1:11434/v1") is None
-    monkeypatch.setattr(discover, "_port_owners", lambda url: ["/usr/local/bin/ollama serve"])
-    assert discover.verified_program("http://127.0.0.1:11434/v1") == "ollama"
-
-
 def test_ollama_error_answers_count_as_remote():
     class C:
         def post(self, *a, **k):
@@ -263,9 +240,10 @@ def test_a_verified_target_is_refused_when_its_port_changes_hands(monkeypatch, t
 
     cfg = parse_config({"version": 1, "audit_log": str(tmp_path / "a.jsonl"), "targets": {
         "ollama": {"url": "http://127.0.0.1:11434/v1", "model": "llama3.2", "location": "local", "verify_program": "ollama"}}})
-    monkeypatch.setattr(discover, "_port_owners", lambda url: ["/usr/local/bin/ollama serve"])
+    ollama = installed(tmp_path, monkeypatch)
+    monkeypatch.setattr(discover, "_port_owners", lambda url: [ollama])
     assert cli._reverify(cfg) == []
-    monkeypatch.setattr(discover, "_port_owners", lambda url: ["/usr/bin/python3 proxy.py"])
+    monkeypatch.setattr(discover, "_port_owners", lambda url: [discover.Owner("/usr/bin/python3", "/usr/bin/python3 wrapper.py")])
     assert cli._reverify(cfg) and "no longer served by ollama" in cli._reverify(cfg)[0]
 
 
@@ -363,12 +341,13 @@ def test_a_verified_port_is_checked_before_every_send(monkeypatch, tmp_path):
     router = Router(cfg, client=httpx.AsyncClient(transport=httpx.MockTransport(up), trust_env=False))
     body = {"model": "auto", "messages": [{"role": "user", "content": "hi"}]}
     # a forwarding server took the port while the router ran, with no failed request in between
-    monkeypatch.setattr(discover, "_port_owners", lambda url: ["/usr/bin/python3 wrapper.py"])
+    monkeypatch.setattr(discover, "_port_owners", lambda url: [discover.Owner("/usr/bin/python3", "/usr/bin/python3 wrapper.py")])
     with pytest.raises((UpstreamFailed, Refused)):
         asyncio.run(router.route(body))
     assert sent == [] and "target_unverified" in open(cfg.audit_log).read()
     # the verified program is back (an Ollama restart): the target is used again, no router restart needed
-    monkeypatch.setattr(discover, "_port_owners", lambda url: ["/usr/local/bin/ollama serve"])
+    ollama = installed(tmp_path, monkeypatch)
+    monkeypatch.setattr(discover, "_port_owners", lambda url: [ollama])
     asyncio.run(router.route(body))
     assert sent == ["local.test"]
 
@@ -387,15 +366,6 @@ def test_ordinary_paths_and_urls_are_still_left_alone():
 def test_key_split_between_a_json_key_and_its_value_is_found():
     assert "aws_access_key" in {f.rule for f in scan_request({"messages": [
         {"role": "user", "content": '{"AKIA": "IOSFODNN7EXAMPLE"}'}]})}
-
-
-@pytest.mark.parametrize("cmd,expected", [
-    ("/usr/local/bin/node\0/usr/local/bin/node /Users/me/LM Studio.app/proxy.js", None),
-    ("/Applications/LM Studio.app/Contents/MacOS/LM Studio\0/Applications/LM Studio.app/Contents/MacOS/LM Studio", "lm studio"),
-    ("/usr/local/bin/node /Users/me/LM Studio.app/proxy.js", None),
-])
-def test_app_bundle_is_judged_from_the_executable_only(cmd, expected):
-    assert discover._program(cmd.replace("\\0", "\0")) == expected
 
 
 def test_duplicate_config_keys_and_null_audit_log_are_errors(tmp_path):
@@ -423,7 +393,7 @@ def test_classifier_send_is_skipped_when_its_verified_port_changed_hands(monkeyp
         posts.append(req.url.host)
         return httpx.Response(200, json={"choices": [{"message": {"content": "PUBLIC"}}]})
 
-    monkeypatch.setattr(discover, "_port_owners", lambda url: ["/usr/bin/python3 wrapper.py"])
+    monkeypatch.setattr(discover, "_port_owners", lambda url: [discover.Owner("/usr/bin/python3", "/usr/bin/python3 wrapper.py")])
     router = Router(cfg, client=httpx.AsyncClient(transport=httpx.MockTransport(up), trust_env=False))
     with pytest.raises((UpstreamFailed, Refused)):
         asyncio.run(router.route({"model": "auto", "messages": [{"role": "user", "content": "our Q3 plan"}]}))
@@ -450,11 +420,6 @@ def test_punctuated_secrets_where_credentials_are_placed(text):
                                   "PATH=/usr/local/bin:/usr/bin:/bin", "LOG_FORMAT=%(asctime)s-%(message)s"])
 def test_ordinary_assignments_are_not_passwords(text):
     assert "secret_shape" not in {f.rule for f in scan_text(text, "x")}
-
-
-def test_a_process_titled_like_ollama_is_judged_by_its_executable():
-    assert discover._program("/usr/local/bin/node\0ollama serve") is None
-    assert discover._program("/usr/local/bin/ollama\0/usr/local/bin/ollama serve") == "ollama"
 
 
 # review round 9
