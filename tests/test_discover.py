@@ -23,6 +23,7 @@ from endorouter.server import create_app
 
 def test_auto_config_finds_local_and_env_keys(monkeypatch, tmp_path):
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
     monkeypatch.setattr(discover, "find_local", lambda timeout=1.0: ([("ollama", "http://127.0.0.1:11434/v1", "qwen3:8b", "ollama", True)], []))
     for _, env, _ in discover.CLOUD_PROVIDERS:
         monkeypatch.delenv(env, raising=False)
@@ -64,6 +65,12 @@ def test_pass_through_needs_public_and_sends_the_named_model(tmp_path):
     assert c.post("/v1/chat/completions", json=body).status_code == 403 and sent == []  # unknown: refused
     r = c.post("/v1/chat/completions", json=body, headers={"x-endorouter-label": "public"})
     assert r.status_code == 200 and sent[0][0] == "cloud.test" and b'"model":"gpt-5"' in sent[0][1].replace(b" ", b"")
+
+
+def test_the_audit_log_defaults_to_the_users_state_folder_on_windows(monkeypatch, tmp_path):
+    monkeypatch.setattr(sys, "platform", "win32")
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    assert discover.default_audit_log() == str(tmp_path / "endorouter" / "audit.jsonl")
 
 
 # stand-ins for what psutil reports: a TCP listener, and a process whose executable, command line and sockets are

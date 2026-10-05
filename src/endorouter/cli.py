@@ -10,6 +10,7 @@ import sys
 from pathlib import Path
 from urllib.parse import urlparse
 
+from .audit import OPEN_FLAGS
 from .config import ConfigError, load_config
 from .detectors import scan_request
 from .labels import Label
@@ -53,10 +54,14 @@ def cmd_doctor(args) -> int:
         ok = False
     try:
         # created the way the router creates it (owner-only), so doctor never leaves a world-readable log behind
-        os.close(os.open(cfg.audit_log, os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o600))
+        os.close(os.open(cfg.audit_log, OPEN_FLAGS, 0o600))
         print("audit log: writable")
-        # the mode applies only when the file is created: an older log may still be readable by others
-        if os.stat(cfg.audit_log).st_mode & 0o077:
+        if sys.platform == "win32":
+            # Windows ignores the mode: the file takes its folder's access list, and the default folder,
+            # %LOCALAPPDATA%, is private to the user
+            print("audit log: access follows its folder on Windows; keep it in a folder only you can read")
+        elif os.stat(cfg.audit_log).st_mode & 0o077:
+            # the mode applies only when the file is created: an older log may still be readable by others
             print(f"audit log: readable by other users; run `chmod 600 {cfg.audit_log}`")
             ok = False
     except OSError as e:
@@ -159,14 +164,14 @@ def cmd_leakbench(args) -> int:
     return 0 if report["leaks"] == 0 else 4
 
 
-SUPPORTED_PLATFORMS = ("darwin", "linux")
+SUPPORTED_PLATFORMS = ("darwin", "linux", "win32")
 
 
 def main(argv: list[str] | None = None) -> int:
-    # The audit lock and the port-owner check are Unix-only today; refusing here beats an ImportError
-    # three modules deep. Windows support is tracked for 0.2.
+    # the audit lock is chosen by platform at import, and only these three have one; refusing here beats an
+    # ImportError three modules deep
     if sys.platform not in SUPPORTED_PLATFORMS:
-        print(f"endorouter runs on macOS and Linux; this is {sys.platform}.", file=sys.stderr)
+        print(f"endorouter runs on macOS, Linux and Windows; this is {sys.platform}.", file=sys.stderr)
         return 2
     ap = argparse.ArgumentParser(prog="endorouter", description=__doc__)
     sub = ap.add_subparsers(dest="cmd", required=True)

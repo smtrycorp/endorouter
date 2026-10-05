@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import sys
 
 import httpx
 import pytest
@@ -228,6 +229,7 @@ def test_serve_refuses_a_network_address():
         cli.main(["serve", "--host", "0.0.0.0"])
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="Windows has no owner-only file mode; the log takes its folder's access list")
 def test_doctor_creates_an_owner_only_audit_log(tmp_path, monkeypatch):
     import stat
 

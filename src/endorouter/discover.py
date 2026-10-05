@@ -35,15 +35,22 @@ CLOUD_PROVIDERS = [
     ("openrouter", "OPENROUTER_API_KEY", "https://openrouter.ai/api/v1"),
 ]
 
-# files that hold secrets by convention on every system ("**/" also matches the top level: see policy._glob)
+# files that hold secrets by convention on every system ("**/" also matches the top level: see policy._glob);
+# _netrc is the Windows spelling
 SECRET_FILES = [
     ".env*", "**/.env*", "**/*.pem", "**/*.key", "**/*.p12", "**/*.pfx", "**/id_rsa*", "**/id_ed25519*", "**/id_ecdsa*",
-    "**/.aws/credentials", "**/.netrc", "**/.npmrc", "**/.pypirc", "**/.docker/config.json", "**/.kube/config",
+    "**/.aws/credentials", "**/.netrc", "**/_netrc", "**/.npmrc", "**/.pypirc", "**/.docker/config.json", "**/.kube/config",
 ]
 
 
 def default_audit_log() -> str:
-    base = Path(os.environ.get("XDG_STATE_HOME") or Path.home() / ".local" / "state") / "endorouter"
+    """The audit log in the user's state directory: XDG on Unix, %LOCALAPPDATA% on Windows. Both are private to the
+    user by default, which matters on Windows, where the file's own mode is not applied (see cli.cmd_doctor)."""
+    if sys.platform == "win32":
+        state = Path(os.environ.get("LOCALAPPDATA") or Path.home() / "AppData" / "Local")
+    else:
+        state = Path(os.environ.get("XDG_STATE_HOME") or Path.home() / ".local" / "state")
+    base = state / "endorouter"
     base.mkdir(parents=True, exist_ok=True)
     return str(base / "audit.jsonl")
 

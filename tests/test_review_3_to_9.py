@@ -122,7 +122,7 @@ def test_secret_in_a_pass_through_model_name_is_found_and_not_audited(tmp_path):
 
 
 # new 3: default secret-file patterns cover the top level too
-@pytest.mark.parametrize("source", [".netrc", ".aws/credentials", ".kube/config", "id_rsa", "identity.pem", ".env"])
+@pytest.mark.parametrize("source", [".netrc", "_netrc", ".aws/credentials", ".kube/config", "id_rsa", "identity.pem", ".env", r"C:\Users\me\.aws\credentials"])
 def test_secret_files_at_the_top_level_are_private(source):
     cfg = parse_config({"version": 1, "targets": {"l": {"url": "http://127.0.0.1/v1", "model": "m", "location": "local"}},
                         "provenance": {"public_sources": ["**"], "private_sources": discover.SECRET_FILES}})
