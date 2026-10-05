@@ -5,6 +5,7 @@ represent is a configuration error."""
 
 from __future__ import annotations
 
+import json
 import os
 import sys
 from pathlib import Path, PurePosixPath, PureWindowsPath
@@ -12,7 +13,8 @@ from pathlib import Path, PurePosixPath, PureWindowsPath
 import psutil
 import pytest
 
-from endorouter import discover
+from endorouter import audit, discover
+from endorouter.audit import TAIL, AuditLog
 from tests.test_discover import (
     LOCALAPPDATA,
     NETSTAT,
@@ -156,3 +158,40 @@ def test_macos_a_row_on_the_port_the_parse_cannot_read_whole_gives_no_verdict(mo
 def test_macos_a_malformed_row_on_another_port_does_not_cost_the_verdict(monkeypatch):
     macos_table(monkeypatch, with_row(ASTRA_ROW.replace("::1.11434", "::1.9999")), FakeProcess({}))
     assert discover._darwin_holders(11434) == {4242, 1411}
+
+
+def test_a_short_read_of_the_tail_does_not_pass_a_torn_line_as_clean(tmp_path, monkeypatch):
+    """os.read may return fewer bytes than asked. Three at a time here: the first read ends at the newline after the
+    whole record, and judging that alone merged the torn line with the next record."""
+    path = tmp_path / "a.jsonl"
+    path.write_bytes(b'{}\n{"event"')
+    real = os.read
+    monkeypatch.setattr(audit.os, "read", lambda fd, n: real(fd, min(n, 3)))
+    AuditLog(str(path)).write({"event": "next"})
+    lines = path.read_bytes().split(b"\n")
+    assert lines[:2] == [b"{}", b'{"event"']
+    assert json.loads(lines[2])["event"] == "audit_repaired"
+    assert json.loads(lines[3])["event"] == "next" and lines[4:] == [b""]
+
+
+def test_the_last_line_is_judged_only_where_its_start_is_in_the_window(tmp_path):
+    """Astra's payload: a last line that is not a record, whose tail-window suffix is one, followed by a blank line.
+    The blank line satisfied the old check for a newline somewhere in the window."""
+    path = tmp_path / "a.jsonl"
+    payload = b"not-json:" + b'{"x":"' + b"x" * (TAIL - 10) + b'"}\n\n'
+    path.write_bytes(payload)
+    AuditLog(str(path)).write({"event": "next"})
+    lines = path.read_bytes().split(b"\n")
+    assert lines[0] == payload[:-2] and lines[1] == b""
+    assert json.loads(lines[2])["event"] == "audit_repaired"
+    assert json.loads(lines[3])["event"] == "next" and lines[4:] == [b""]
+
+
+def test_a_record_longer_than_the_window_gets_the_repair_and_a_whole_file_in_the_window_does_not(tmp_path):
+    path = tmp_path / "a.jsonl"
+    path.write_bytes(json.dumps({"pad": "x" * TAIL}).encode() + b"\n")
+    AuditLog(str(path)).write({"event": "next"})
+    assert [json.loads(x)["event"] for x in path.read_bytes().split(b"\n")[1:3]] == ["audit_repaired", "next"]
+    path.write_bytes(json.dumps({"pad": "x" * (TAIL - 100)}).encode() + b"\n")
+    AuditLog(str(path)).write({"event": "next"})
+    assert [json.loads(x).get("event") for x in path.read_bytes().split(b"\n")[:2]] == [None, "next"]

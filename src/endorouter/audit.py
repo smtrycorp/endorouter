@@ -59,16 +59,33 @@ def _tail_repair(fd: int) -> bytes:
     ending in a newline, otherwise an audit_repaired record (on a line of its own), so the partial line a writer that
     died mid-record left behind stays a line of its own instead of becoming the head of the next record. The last
     line is parsed, not just its last byte: a writer that died right after the repair's own newline leaves a torn line
-    that does end in one. A last line longer than TAIL is not judged, and gets the repair."""
+    that does end in one. The last line is judged only when the window holds its start: the window begins at the
+    file's start, or a newline precedes the line inside it. Otherwise the line is longer than TAIL, or only its end was
+    read, and either way it is not known to be a record, so it gets the repair; a last line that is a truncated record
+    followed by blank lines parsed as one before."""
     size = os.fstat(fd).st_size
     if size == 0:
         return b""
-    os.lseek(fd, max(size - TAIL, 0), os.SEEK_SET)
-    tail = os.read(fd, TAIL)
-    last = tail.rstrip(b"\n").rsplit(b"\n", 1)[-1]
-    if tail.endswith(b"\n") and (size <= TAIL or b"\n" in tail[:-1]) and _is_record(last):
+    start = max(size - TAIL, 0)
+    os.lseek(fd, start, os.SEEK_SET)
+    tail = _read_all(fd, size - start)
+    before, newline, last = tail.rstrip(b"\n").rpartition(b"\n")
+    if len(tail) == size - start and tail.endswith(b"\n") and (start == 0 or newline) and _is_record(last):
         return b""
     return (b"" if tail.endswith(b"\n") else b"\n") + _line({"event": "audit_repaired"})
+
+
+def _read_all(fd: int, n: int) -> bytes:
+    """n bytes from the current offset, or fewer only at end of file: a read may return less than it was asked for, and
+    a window cut short would judge a torn line by its first bytes."""
+    parts = []
+    while n > 0:
+        chunk = os.read(fd, n)
+        if not chunk:
+            break
+        parts.append(chunk)
+        n -= len(chunk)
+    return b"".join(parts)
 
 
 def _is_record(line: bytes) -> bool:
