@@ -108,8 +108,11 @@ def _basename(path: str) -> str:
 
 
 def _named(exe: str, program: str) -> bool:
+    """The program's own name or, for the apps, one of Electron's helper names exactly: "<App> Helper" and "<App> Helper
+    (Renderer|GPU|Plugin)". A prefix match would take "<App> Helperanything"."""
     name = _basename(exe)
-    return name == program or (program in APPS and name.startswith(f"{program} helper"))
+    kinds = ("", " (renderer)", " (gpu)", " (plugin)") if program in APPS else ()
+    return name == program or any(name == f"{program} helper{kind}" for kind in kinds)
 
 
 def _in_folder(parent: PurePath, folder: str) -> bool:

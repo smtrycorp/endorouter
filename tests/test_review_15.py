@@ -7,10 +7,12 @@ from __future__ import annotations
 
 import os
 import sys
-from pathlib import Path
+from pathlib import Path, PurePosixPath, PureWindowsPath
+
+import pytest
 
 from endorouter import discover
-from tests.test_discover import URL, installed, table
+from tests.test_discover import LOCALAPPDATA, URL, WINDOWS_INSTALLS, installed, table
 from tests.test_review_14 import stat_as, unix_only
 
 
@@ -82,3 +84,29 @@ def test_on_macos_the_admin_group_may_write_a_folder_above_but_not_the_executabl
     assert discover.verified_program(URL) is None
     stat_as(monkeypatch, Path(ollama.exe), st_gid=discover.ADMIN_GID, st_mode=0o100755)
     assert discover.verified_program(URL) == "ollama"
+
+
+HELPERS = "/Applications/LM Studio.app/Contents/Frameworks/{0}.app/Contents/MacOS/{0}"
+
+
+@pytest.mark.parametrize("name,expected", [
+    ("LM Studio Helper", "lm studio"),
+    ("LM Studio Helper (Renderer)", "lm studio"),
+    ("LM Studio Helper (GPU)", "lm studio"),
+    ("LM Studio Helper (Plugin)", "lm studio"),
+    ("LM Studio Helpermalware", None),
+    ("LM Studio Helper (Malware)", None),
+    ("LM Studio Helper.bak", None),
+    ("LM Studio Helper (GPU) ", None),
+])
+def test_only_electrons_own_helper_names_count_as_the_app(monkeypatch, name, expected):
+    monkeypatch.setattr(discover, "_HostPath", PurePosixPath)
+    monkeypatch.setattr(discover, "_INSTALLS", discover.INSTALLS["darwin"])
+    assert discover._installed(HELPERS.format(name)) == expected
+
+
+def test_a_windows_helper_name_with_anything_after_helper_is_not_the_app(monkeypatch):
+    monkeypatch.setattr(discover, "_HostPath", PureWindowsPath)
+    monkeypatch.setattr(discover, "_INSTALLS", WINDOWS_INSTALLS)
+    assert discover._installed(LOCALAPPDATA + r"\Programs\Jan\Jan Helpermalware.exe") is None
+    assert discover._installed(LOCALAPPDATA + r"\Programs\Jan\Jan Helper.exe") == "jan"
