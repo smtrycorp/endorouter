@@ -407,8 +407,7 @@ def test_macos_a_netstat_layout_this_parse_does_not_fit_gives_no_verdict(monkeyp
     macos_table(monkeypatch, NETSTAT.replace("ollama:4242   00000", "ollama 00000"), FakeProcess({}))
     assert discover._darwin_holders(11434) is None
     macos_table(monkeypatch, NETSTAT.replace("ollama:4242   00000", "ollama:x   00000"), FakeProcess({}))
-    with pytest.raises(ValueError):
-        discover._darwin_holders(11434)  # _port_owners turns this into no verdict
+    assert discover._darwin_holders(11434) is None
 
 
 # Windows: GetExtendedTcpTable, one row per socket with the pid that created it, for every user

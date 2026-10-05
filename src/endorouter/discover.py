@@ -316,19 +316,18 @@ def _darwin_holders(port: int) -> set[int] | None:
     pids = set()
     for line in lines:
         fields = line.split()
-        if len(fields) < 6 or not fields[0].startswith("tcp") or fields[5] != "LISTEN":
+        if not fields or not fields[0].startswith("tcp"):
             continue
-        _, sep, local_port = fields[3].rpartition(".")
+        _, sep, local_port = fields[3].rpartition(".") if len(fields) > 3 else ("", "", "")
         if not sep:
             return None
         if int(local_port) != port:
             continue
-        # the line ends "process:pid" and eight counters; a layout this parse does not fit gives no verdict
-        head, *counters = line.rsplit(None, 8)
-        _, colon, pid = head.rpartition(":")
-        if len(counters) != 8 or not colon:
+        pid = _netstat_pid(line)
+        if pid is None:  # a row on this port the parse cannot read with certainty: no verdict, not a skipped row
             return None
-        pids.add(int(pid))
+        if fields[5] == "LISTEN":
+            pids.add(pid)
     for p in psutil.process_iter():
         try:
             if any(_listens_on(c, port) for c in p.net_connections(kind="tcp")):
@@ -336,6 +335,26 @@ def _darwin_holders(port: int) -> set[int] | None:
         except psutil.Error:
             continue
     return pids
+
+
+_DIGITS, _HEX = frozenset("0123456789"), frozenset("0123456789abcdefABCDEF")
+
+
+def _netstat_pid(line: str) -> int | None:
+    """The pid in a row of the layout _NETSTAT_HEAD names, or None when the row is not in it: six columns, four decimal
+    counters, "process:pid" (the name may hold spaces, and is cut short, never empty) and eight hex counters. Counting
+    the trailing tokens is not enough: a row one counter short puts ":<pid>" among the counters, and a name that
+    happens to end in ":<digits>" stands in for the pid."""
+    head, *counters = line.rsplit(None, 8)
+    lead = head.split(None, 10)
+    if len(lead) != 11 or len(counters) != 8 or not _all_in(counters, _HEX) or not _all_in(lead[1:3] + lead[6:10], _DIGITS):
+        return None
+    name, colon, pid = lead[10].rpartition(":")
+    return int(pid) if colon and name and _all_in([pid], _DIGITS) else None
+
+
+def _all_in(tokens: list[str], chars: frozenset[str]) -> bool:
+    return all(t and set(t) <= chars for t in tokens)
 
 
 def _darwin_exe(pid: int) -> str | None:

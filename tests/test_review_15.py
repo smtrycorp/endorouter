@@ -9,10 +9,21 @@ import os
 import sys
 from pathlib import Path, PurePosixPath, PureWindowsPath
 
+import psutil
 import pytest
 
 from endorouter import discover
-from tests.test_discover import LOCALAPPDATA, URL, WINDOWS_INSTALLS, installed, table
+from tests.test_discover import (
+    LOCALAPPDATA,
+    NETSTAT,
+    URL,
+    WINDOWS_INSTALLS,
+    Conn,
+    FakeProcess,
+    installed,
+    macos_table,
+    table,
+)
 from tests.test_review_14 import stat_as, unix_only
 
 
@@ -110,3 +121,38 @@ def test_a_windows_helper_name_with_anything_after_helper_is_not_the_app(monkeyp
     monkeypatch.setattr(discover, "_INSTALLS", WINDOWS_INSTALLS)
     assert discover._installed(LOCALAPPDATA + r"\Programs\Jan\Jan Helpermalware.exe") is None
     assert discover._installed(LOCALAPPDATA + r"\Programs\Jan\Jan Helper.exe") == "jan"
+
+
+OLLAMA_ROW = "tcp4       0      0  127.0.0.1.11434        *.*                    LISTEN                 0            0  131072  131072           ollama:4242   00000 00000006 000000000246b336 00000000 00000800      1      0 000000\n"
+# Astra's row: the name is "x:4242 ", the pid 1411, and the last counter is missing, so counting eight trailing tokens
+# takes ":1411" for a counter and 4242 for the pid
+ASTRA_ROW = "tcp6 0 0 ::1.11434 *.* LISTEN 0 0 131072 131072 x:4242 :1411 00000 00000006 000000000245e65a 00000000 00000800 1 0\n"
+
+
+def with_row(row: str) -> str:
+    return NETSTAT.replace(OLLAMA_ROW, OLLAMA_ROW + row)
+
+
+@pytest.mark.parametrize("row", [
+    ASTRA_ROW,
+    ASTRA_ROW.replace(" 1 0\n", " 1 0 000000\n").replace("x:4242 :1411", "x:4242 1411"),  # no colon before the pid
+    ASTRA_ROW.replace("x:4242 :1411", ":1411 00000"),  # an empty name
+    OLLAMA_ROW.replace("      1      0 000000\n", "      1      0\n"),  # a counter short
+    OLLAMA_ROW.replace("ollama:4242   00000", "ollama:4242   0000g"),  # a counter that is not a number
+    OLLAMA_ROW.replace("*.*                    LISTEN", "LISTEN"),  # the state column shifted left
+    OLLAMA_ROW.replace("*.*                    LISTEN", "*.*   extra   LISTEN"),  # and right
+    OLLAMA_ROW.replace("LISTEN                 0            0", "LISTEN                 0"),  # a middle counter short
+    "tcp4       0      0  127.0.0.1.11434\n",
+])
+def test_macos_a_row_on_the_port_the_parse_cannot_read_whole_gives_no_verdict(monkeypatch, row):
+    """Every row on the port must be in the layout the header promised; one that is not is no verdict for the whole
+    port, never a skipped row, since the readable processes would then stand in for it."""
+    macos_table(monkeypatch, with_row(row), FakeProcess({4242: ("x", [], [Conn(11434, 4242)]), 1411: ("x", [], psutil.AccessDenied(1411))}))
+    assert discover._darwin_holders(11434) is None
+    macos_table(monkeypatch, with_row(ASTRA_ROW.replace(" 1 0\n", " 1 0 000000\n")), FakeProcess({}))
+    assert discover._darwin_holders(11434) == {4242, 1411}, "the same row with its eighth counter names both pids"
+
+
+def test_macos_a_malformed_row_on_another_port_does_not_cost_the_verdict(monkeypatch):
+    macos_table(monkeypatch, with_row(ASTRA_ROW.replace("::1.11434", "::1.9999")), FakeProcess({}))
+    assert discover._darwin_holders(11434) == {4242, 1411}
