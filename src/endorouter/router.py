@@ -54,13 +54,19 @@ def _plain_json(body) -> dict:
 
 
 class SentUnrecorded(Exception):
-    """The request reached a target, but the record of that could not be written. Distinct from a refusal: the prompt
-    has left, and the caller must not be told otherwise."""
+    """Something left for a target, but the record of that could not be written. Distinct from a refusal: the caller
+    must not be told nothing was sent. target names every recipient of the prompt (the classifier included), probed
+    every Ollama asked whether a model is local, a question that carries the model's name and nothing of the prompt.
+    One of the two is always non-empty."""
 
-    def __init__(self, request_id: str, target: str):
-        super().__init__(f"sent to {target}, but the audit log could not record it")
+    def __init__(self, request_id: str, sent: list[str], probed: list[str]):
         self.request_id = request_id
-        self.target = target
+        self.target = ", ".join(sent)
+        self.probed = ", ".join(probed)
+        if sent:
+            super().__init__(f"sent to {self.target}, but the audit log could not record it")
+        else:
+            super().__init__(f"no prompt was sent; a model probe to {self.probed} was, and the audit log could not record it")
 
 
 class UpstreamFailed(Exception):
@@ -100,10 +106,12 @@ class Router:
         capability: str | None = None,
         request_id: str | None = None,
         sent: list[str] | None = None,
+        probed: list[str] | None = None,
     ) -> tuple[Decision, list[Finding]]:
         """The decision for a request. The local classifier, when enabled, receives the text here; its name is added
         to sent just before the text leaves, so an audit failure after that is never reported as "nothing was sent",
-        and a classifier that never received it is never reported as a recipient."""
+        and a classifier that never received it is never reported as a recipient. An Ollama classifier is first asked
+        whether its model is local, and that probe is added to probed."""
         # scanning is CPU work; in a thread, a large request cannot stall every other request in flight
         findings = await asyncio.to_thread(scan_request, body, [(f"sources[{i}]", s) for i, s in enumerate(sources)])
         verdict = None
@@ -112,7 +120,7 @@ class Router:
             # the classifier receives the prompt text too: its port is re-verified like any other send, and an
             # unverified port means no verdict (which never grants anything)
             if ct is not None and (not (ct.verify_program or ct.ollama_api)
-                                   or await self._still_verified(ct, request_id or "")):
+                                   or await self._still_verified(ct, request_id or "", probed)):
                 def dispatching() -> None:
                     # written only when the text is about to leave, and before it does
                     self.audit.write({"event": "classifier_dispatch", "request_id": request_id, "target": ct.name})
@@ -153,9 +161,10 @@ class Router:
         sources = tuple(str(s) for s in sources)
         given = supplied if supplied is not None else declared  # Label.PUBLIC is 0: never test labels for truth
         sent: list[str] = []  # every target that may hold the prompt, the local classifier included
+        probed: list[str] = []  # every Ollama that was sent a model name
         try:
             decision, _ = await self.plan(body, sources=sources, declared=declared, capability=capability,
-                                          request_id=request_id, sent=sent)
+                                          request_id=request_id, sent=sent, probed=probed)
             # flushed before any target is sent the request; an AuditError here, with nothing sent, is a refusal
             self.audit.write({"event": "decision", "request_id": request_id, "mode": self.cfg.mode,
                               "policy_version": POLICY_VERSION, "peer": peer, "trusted": trusted,
@@ -166,17 +175,17 @@ class Router:
                               "sources": len(sources), **decision.as_record()})
             if decision.selected is None:
                 raise Refused(decision, request_id)
-            return await self._dispatch(body, decision, request_id, sent)
+            return await self._dispatch(body, decision, request_id, sent, probed)
         except AuditError:
-            if not sent:
+            if not sent and not probed:
                 raise
-            raise SentUnrecorded(request_id, ", ".join(sent)) from None
+            raise SentUnrecorded(request_id, sent, probed) from None
 
-    async def _dispatch(self, body: dict, decision: Decision, request_id: str, sent: list[str]) -> Routed:
+    async def _dispatch(self, body: dict, decision: Decision, request_id: str, sent: list[str], probed: list[str]) -> Routed:
         attempts: list[dict] = []
         stream = bool(body.get("stream"))
         for target in permitted_targets(self.cfg, decision):
-            if (target.verify_program or target.ollama_api) and not await self._still_verified(target, request_id):
+            if (target.verify_program or target.ollama_api) and not await self._still_verified(target, request_id, probed):
                 attempts.append({"target": target.name, "error": "port_not_verified"})
                 continue
             t0 = time.monotonic()
@@ -217,25 +226,29 @@ class Router:
         self.audit.write({"event": "failed", "request_id": request_id, "attempts": attempts})
         raise UpstreamFailed(request_id, attempts)
 
-    async def _ollama_model_remote(self, target: Target, request_id: str) -> str | None:
+    async def _ollama_model_remote(self, target: Target, request_id: str, probed: list[str]) -> str | None:
         """Ollama can start serving a hosted model under a name that was local at setup; ask it again each time. The
-        question carries the model's name to the port, so like every send it is on disk first."""
+        question carries the model's name to the port, so like every send it is on disk first, and the target is in
+        probed once it may have arrived."""
         if "cloud" in target.model.lower():
             return f"model {target.model} is hosted remotely"
         self.audit.write({"event": "probe", "request_id": request_id, "target": target.name, "model": target.model})
+        probed.append(target.name)
         try:
-            r = await self.client.post(ollama_show_url(target.url), json={"model": target.model})
+            req = self.client.build_request("POST", ollama_show_url(target.url), json={"model": target.model})
+            # explicit per call, as for every send: a redirect must not carry the model's name to another host
+            r = await self.client.send(req, follow_redirects=False)
             info = r.json()
         except (httpx.HTTPError, ValueError):
             return "could not confirm the model runs on this machine"
         return f"model {target.model} is hosted remotely" if remote_from_show(r.status_code, info) else None
 
-    async def _still_verified(self, target: Target, request_id: str) -> bool:
+    async def _still_verified(self, target: Target, request_id: str, probed: list[str]) -> bool:
         """Checked before every send, never cached: a port that changes hands, or an Ollama model that is now hosted
         remotely, is refused on the next request. The process table is read in a worker thread so other requests continue."""
         reason = await asyncio.to_thread(verify_target, target)
         if reason is None and (target.ollama_api or target.verify_program == "ollama"):
-            reason = await self._ollama_model_remote(target, request_id)
+            reason = await self._ollama_model_remote(target, request_id, probed)
         if reason is None:
             return True
         self.audit.write({"event": "target_unverified", "request_id": request_id, "target": target.name, "reason": reason})

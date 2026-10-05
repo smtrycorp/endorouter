@@ -125,7 +125,11 @@ def create_app(cfg: Config, router: Router | None = None) -> Starlette:
             print(f"endorouter: audit log unwritable, request refused: {e}", file=sys.stderr)
             return _error(503, "the audit log could not be written, so nothing was sent")
         except SentUnrecorded as e:
-            print(f"endorouter: request {e.request_id} was sent to {e.target} but could not be recorded", file=sys.stderr)
+            print(f"endorouter: request {e.request_id}: {e}", file=sys.stderr)
+            if not e.target:
+                # only a model probe left, carrying the model's name: no prompt did, and the caller is told exactly that
+                return _error(503, f"the audit log could not be written; no prompt was sent, but a model probe to "
+                                   f"{e.probed} was", request_id=e.request_id, probed=e.probed)
             return _error(502, "sent, but not recorded: the audit log failed after the request left; the response "
                                "was discarded", request_id=e.request_id, target=e.target)
         except Refused as e:

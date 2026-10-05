@@ -5,17 +5,22 @@ redirect and is reported when it left, and the audit repair judges the last line
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import subprocess
 import sys
 from pathlib import Path
 
+import httpx
 import pytest
+from starlette.testclient import TestClient
 
 from endorouter import discover
-from endorouter.audit import AuditLog
+from endorouter.audit import AuditError, AuditLog
 from endorouter.config import ConfigError, Target, parse_config
+from endorouter.router import Router, SentUnrecorded, UpstreamFailed
+from endorouter.server import create_app
 from tests.test_discover import (
     NETSTAT,
     URL,
@@ -271,6 +276,63 @@ def test_a_target_url_whose_host_or_port_does_not_parse_is_a_config_error(url):
 def test_verify_target_never_raises():
     t = Target(name="t", url="http://127.0.0.1:bad/v1", model="m", location="local", verify_program="ollama")
     assert discover.verify_target(t) == "no longer served by ollama"
+
+
+def _ollama_router(tmp_path, monkeypatch, up, **client):
+    cfg = parse_config({"version": 1, "audit_log": str(tmp_path / "a.jsonl"), "targets": {
+        "ollama": {"url": "http://local.test:11434/v1", "model": "m", "location": "local", "verify_program": "ollama"}}})
+    ollama = installed(tmp_path, monkeypatch)
+    monkeypatch.setattr(discover, "_port_owners", lambda url: [ollama])
+    return cfg, Router(cfg, client=httpx.AsyncClient(transport=httpx.MockTransport(up), trust_env=False, **client))
+
+
+BODY = {"model": "auto", "messages": [{"role": "user", "content": "hi"}]}
+
+
+def test_the_model_probe_follows_no_redirect(tmp_path, monkeypatch):
+    """A client configured to follow redirects would carry the model's name to another host; the probe says no per
+    request, like every send."""
+    seen = []
+
+    def up(req):
+        seen.append(req.url.host + req.url.path)
+        if req.url.path == "/api/show":
+            return httpx.Response(307, headers={"location": "https://remote.test/collect"})
+        return httpx.Response(200, json={})
+
+    cfg, router = _ollama_router(tmp_path, monkeypatch, up, follow_redirects=True)
+    with pytest.raises(UpstreamFailed) as e:
+        asyncio.run(router.route(BODY))
+    assert seen == ["local.test/api/show"]
+    assert e.value.attempts == [{"target": "ollama", "error": "port_not_verified"}]
+
+
+def test_an_audit_failure_after_the_probe_says_a_probe_left_and_no_prompt_did(tmp_path, monkeypatch):
+    posts = []
+
+    def up(req):
+        posts.append(req.url.path)
+        return httpx.Response(200, json={})
+
+    cfg, router = _ollama_router(tmp_path, monkeypatch, up)
+    real = router.audit.write
+
+    def failing(record):
+        if record["event"] == "attempt":
+            raise AuditError("disk full")
+        real(record)
+
+    monkeypatch.setattr(router.audit, "write", failing)
+    with pytest.raises(SentUnrecorded) as e:
+        asyncio.run(router.route(BODY))
+    assert posts == ["/api/show"]
+    assert e.value.target == "" and e.value.probed == "ollama"
+    assert str(e.value).startswith("no prompt was sent; a model probe to ollama was")
+    c = TestClient(create_app(cfg, router), base_url="http://127.0.0.1", client=("127.0.0.1", 5000))
+    r = c.post("/v1/chat/completions", json=BODY)
+    assert r.status_code == 503
+    assert "no prompt was sent, but a model probe to ollama was" in r.json()["error"]["message"]
+    assert posts == ["/api/show", "/api/show"]
 
 
 def test_a_repair_interrupted_after_its_newline_still_gets_the_marker(tmp_path):
