@@ -227,3 +227,34 @@ def test_a_target_url_the_client_refuses_at_dispatch_is_a_failed_target_not_a_cr
     c = TestClient(create_app(cfg, router), base_url="http://127.0.0.1", client=("127.0.0.1", 5000))
     r = c.post("/v1/chat/completions", json=body)
     assert r.status_code == 502 and r.json()["error"]["attempts"][0]["error"] == "InvalidURL"
+
+
+def test_macos_an_unbound_socket_row_is_not_a_malformed_one(monkeypatch):
+    """netstat -a lists CLOSED sockets with the wildcard port; they hold no port and cost nothing."""
+    closed = "tcp4 0 0 *.* *.* CLOSED 0 0 131072 131072 unrelated:99 00000 00000000 000000000245e65a 00000000 00000000 1 0 000000\n"
+    macos_table(monkeypatch, with_row(closed), FakeProcess({4242: ("x", [], [Conn(11434, 4242)])}))
+    assert discover._darwin_holders(11434) == {4242, 1411}  # the table's two listeners, the CLOSED row ignored
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="the component walk runs on Unix; Windows uses realpath")
+@pytest.mark.parametrize("path", ["/usr/bin/true/../false", "/usr/bin/true/", "/usr/bin/true/."])
+def test_a_path_through_a_file_leads_nowhere(path):
+    assert os.path.exists("/usr/bin/true")
+    assert discover._leads_to(path) is None
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="the component walk runs on Unix; Windows uses realpath")
+def test_a_link_that_cannot_be_read_leads_nowhere(tmp_path, monkeypatch):
+    target = tmp_path / "ollama"
+    target.write_text("")
+    link = tmp_path / "entry"
+    link.symlink_to(target)
+    real = os.readlink
+
+    def gone(p, *a, **k):
+        if str(p) == str(link):
+            raise FileNotFoundError(p)
+        return real(p, *a, **k)
+
+    monkeypatch.setattr(os, "readlink", gone)
+    assert discover._leads_to(str(link)) is None

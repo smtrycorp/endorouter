@@ -174,12 +174,17 @@ def _leads_to(path: str) -> str | None:
         except OSError:  # nothing there, or no leave to look
             return None
         if not stat.S_ISLNK(st.st_mode):
+            if rest and not stat.S_ISDIR(st.st_mode):  # "file/", "file/." and "file/../x" resolve nowhere
+                return None
             resolved = here
             continue
         links += 1
         if links > MAX_LINKS or st.st_uid not in (0, me) or not _nobody_else_writes(resolved):
             return None
-        target = os.readlink(here)
+        try:
+            target = os.readlink(here)
+        except OSError:  # replaced or removed between lstat and now, or unreadable
+            return None
         if target.startswith("/"):
             resolved = "/"
         rest = target.split("/") + rest
@@ -320,6 +325,10 @@ def _darwin_holders(port: int) -> set[int] | None:
             continue
         _, sep, local_port = fields[3].rpartition(".") if len(fields) > 3 else ("", "", "")
         if not sep:
+            return None
+        if local_port == "*":  # an unbound socket (netstat -a lists CLOSED ones); it holds no port
+            continue
+        if not local_port.isdigit():
             return None
         if int(local_port) != port:
             continue
